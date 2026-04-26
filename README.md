@@ -29,12 +29,14 @@ Ubiquiti software under their EULA.
 
 ## Why a custom image
 
-The well-known [`lemker/unifi-os-server`](https://github.com/lemker/unifi-os-server)
-image works fine, but its `uosserver` base layer is built and hosted on a
+There is another commonly-used image out there, [`lemker/unifi-os-server`](https://github.com/lemker/unifi-os-server),
+and I'm sure the image works fine, but its `uosserver` base layer is built and hosted on a
 single contributor's GHCR account with no published Dockerfile (because the
 image *cannot* be expressed as a Dockerfile — it comes from Ubiquiti's
-installer). This project owns the full build pipeline so the supply chain is
-auditable end-to-end.
+installer). His project also has no Helm chart for Kubernetes users.
+
+This project owns the full build pipeline so the supply chain is
+auditable end-to-end, and it has a Helm chart to make it easier to install.
 
 ## Quick start (Docker)
 
