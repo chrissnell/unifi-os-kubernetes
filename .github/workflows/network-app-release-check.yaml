@@ -1,0 +1,136 @@
+---
+name: Check for new UniFi Network application release
+
+# Polls Ubiquiti's Firmware Update Service (via the `uos` CLI in the pinned
+# uosserver base image) for the latest release-channel `unifi` package paired
+# with the current UOS_SERVER_VERSION. If newer than what's pinned in
+# docker/Dockerfile, opens a PR bumping NETWORK_APP_VERSION so the next image
+# build bakes it in.
+
+on:
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Open PR even if pinned version matches upstream"
+        required: false
+        default: "false"
+        type: string
+  schedule:
+    # 15 minutes after the UOS Server release-check so a same-morning UOS
+    # Server bump has a chance to settle first (the discovery container
+    # uses whatever UOSSERVER_TAG is currently on main).
+    - cron: "15 6 * * *"
+
+permissions:
+  contents: write
+  packages: read
+  pull-requests: write
+
+env:
+  REGISTRY: ghcr.io
+  UOSSERVER_IMAGE: ${{ github.repository_owner }}/uosserver
+
+jobs:
+  network-app-release-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Read pinned versions from Dockerfile
+        id: pinned
+        run: |
+          UOSSERVER_TAG=$(awk -F= '/^ARG UOSSERVER_TAG=/ {print $2}' docker/Dockerfile)
+          NETWORK_APP_VERSION=$(awk -F= '/^ARG NETWORK_APP_VERSION=/ {print $2}' docker/Dockerfile)
+          if [ -z "$UOSSERVER_TAG" ] || [ -z "$NETWORK_APP_VERSION" ]; then
+            echo "Could not parse UOSSERVER_TAG or NETWORK_APP_VERSION from docker/Dockerfile" >&2
+            exit 1
+          fi
+          {
+            echo "uosserver_tag=$UOSSERVER_TAG"
+            echo "network_app_version=$NETWORK_APP_VERSION"
+          } | tee -a "$GITHUB_OUTPUT"
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Discover latest Network app version paired with UOS Server
+        id: discover
+        env:
+          UOSSERVER_TAG: ${{ steps.pinned.outputs.uosserver_tag }}
+        run: |
+          # `uos runnable latest-versions unifi` queries Ubiquiti's FUS and
+          # returns the Network app release that's paired with this UOS
+          # Server version. Running it inside the uosserver base guarantees
+          # the same answer the live container would give.
+          IMAGE="${REGISTRY}/${UOSSERVER_IMAGE}:${UOSSERVER_TAG}"
+          docker pull --platform linux/amd64 "$IMAGE"
+          version=$(docker run --rm --platform linux/amd64 \
+            --entrypoint /usr/bin/uos "$IMAGE" \
+            runnable latest-versions unifi \
+            | jq -r '.release.version // empty')
+          if [ -z "$version" ]; then
+            echo "FUS returned no release for product=unifi on ${IMAGE}" >&2
+            exit 1
+          fi
+          echo "version=$version" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Compare against pinned version
+        id: compare
+        env:
+          FORCE: ${{ inputs.force }}
+          PINNED: ${{ steps.pinned.outputs.network_app_version }}
+          UPSTREAM: ${{ steps.discover.outputs.version }}
+        run: |
+          if [ "$FORCE" = "true" ]; then
+            echo "Force flag set, opening PR regardless of version match"
+            echo "should_pr=true" >> "$GITHUB_OUTPUT"
+          elif [ "$PINNED" = "$UPSTREAM" ]; then
+            echo "NETWORK_APP_VERSION ${PINNED} already pinned, nothing to do"
+            echo "should_pr=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "New NETWORK_APP_VERSION ${UPSTREAM} detected (pinned: ${PINNED})"
+            echo "should_pr=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Bump Dockerfile
+        if: steps.compare.outputs.should_pr == 'true'
+        env:
+          UPSTREAM: ${{ steps.discover.outputs.version }}
+        run: |
+          sed -i "s|^ARG NETWORK_APP_VERSION=.*|ARG NETWORK_APP_VERSION=${UPSTREAM}|" docker/Dockerfile
+          # Patch-bump the chart so chart-releaser publishes a new release.
+          CHART_VERSION=$(awk '/^version:/ {print $2}' chart/Chart.yaml)
+          MAJOR=$(echo "$CHART_VERSION" | cut -d. -f1)
+          MINOR=$(echo "$CHART_VERSION" | cut -d. -f2)
+          PATCH=$(echo "$CHART_VERSION" | cut -d. -f3)
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+          sed -i "s|^version: .*|version: ${NEW_VERSION}|" chart/Chart.yaml
+          echo "Chart bumped from ${CHART_VERSION} to ${NEW_VERSION}, NETWORK_APP_VERSION ${UPSTREAM}"
+
+      - name: Open pull request
+        if: steps.compare.outputs.should_pr == 'true'
+        uses: peter-evans/create-pull-request@v6
+        env:
+          UPSTREAM: ${{ steps.discover.outputs.version }}
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: bump Network application to ${{ env.UPSTREAM }}"
+          branch: bump/network-app-${{ env.UPSTREAM }}
+          base: main
+          title: "Bump Network application to ${{ env.UPSTREAM }}"
+          body: |
+            Automated bump:
+
+            * `NETWORK_APP_VERSION` → `${{ env.UPSTREAM }}`
+            * Chart `version` patch-bumped (chart-releaser will publish on merge)
+
+            Discovered via `uos runnable latest-versions unifi` against
+            `${{ env.REGISTRY }}/${{ env.UOSSERVER_IMAGE }}:${{ steps.pinned.outputs.uosserver_tag }}`.
+            FUS source: https://fw-update.ubnt.com (release channel).

@@ -168,6 +168,40 @@ self-hosted UniFi Network controllers (versions 5.x through 10.x).
 
 There's no need to manipulate Mongo dumps directly.
 
+### Re-adopting devices after a restore
+
+After restoring a backup, your devices may still hold an adoption key
+from the old controller and refuse to talk to UOS. They'll show up as
+disconnected in the device list. When that happens:
+
+1. **Factory-reset the device physically.** Hold the reset button until
+   the LED blinks the reset pattern. Software reset from the old
+   controller doesn't always clear the adoption state.
+2. **Remove the stale entry from UOS.** In the UI, click the device, open
+   its settings, and use the **Remove** button. This clears the old
+   adoption record so the device can be re-adopted fresh.
+3. **SSH to the device.** Default credentials are `ubnt` / `ubnt`:
+   ```
+   ssh ubnt@<device-ip>
+   ```
+4. **Point the device at UOS** with `set-inform`. The URL must be `http`
+   (not `https`), on port `8080`, with the `/inform` path:
+   ```
+   set-inform http://<uos-host>:8080/inform
+   ```
+   `<uos-host>` is the IP or hostname your devices can reach UOS on —
+   typically `systemIp` from your values.yaml, or the LoadBalancer IP of
+   the `communication` (8080) service.
+5. The device will show up under **Network → Devices** as **Pending
+   Adoption** within a few seconds. Click **Adopt**. UOS pushes config
+   and the device reboots.
+6. If the device doesn't appear within a minute, re-run `set-inform`
+   from the SSH session. Adoption sometimes drops the inform URL
+   mid-flight and a second nudge brings it back.
+
+Once adopted, UOS owns the inform URL and you won't need SSH again for
+that device.
+
 ## Autobackups
 
 UOS Network app autobackups land in `/var/lib/unifi/data/backup/autobackup/`
@@ -213,6 +247,27 @@ helm template unifi chart/ > /tmp/render.yaml
 4. Opens a PR bumping `UOSSERVER_TAG` and `UOS_SERVER_VERSION`.
 5. Merging the PR triggers `build-image.yaml`, which publishes a new
    `unifi-os-server` tag.
+
+## Network app updates
+
+The image bakes in the Network app at the version Ubiquiti ships with
+this UOS Server release. **Don't use the "Update" button in the UI.**
+
+Network app upgrades happen by image bump. We check Ubiquiti daily and
+publish a new [`unifi-os-server`](https://github.com/chrissnell/unifi-os-kubernetes/pkgs/container/unifi-os-server)
+image when a new Network app is released. Pull the new image and restart
+the pod.
+
+If you do click the in-UI updater, the new `.deb` lands on the data PVC
+and UOS replays it on every container start — so the upgrade sticks. The
+cost is that your Network app version no longer matches what's pinned in
+the image, and the next image bump won't downgrade you back. To roll back
+to the image's version after an in-UI update:
+
+```
+kubectl exec -n unifi <pod> -- rm /persistent/dpkg/bullseye/packages/unifi_*.deb
+kubectl rollout restart deploy/<release>
+```
 
 ## Contributing
 

@@ -21,6 +21,30 @@ LABEL org.opencontainers.image.licenses="MIT"
 
 ENV UOS_SERVER_VERSION="5.0.6"
 
+# Network application version. Bumped automatically by the
+# network-app-release-check workflow whenever Ubiquiti's FUS publishes a
+# newer release-channel `unifi` paired with this UOS_SERVER_VERSION.
+ARG NETWORK_APP_VERSION=10.3.55-34128-1
+ENV NETWORK_APP_VERSION=${NETWORK_APP_VERSION}
+
+# Bake the Network app into the image so first boot doesn't show the
+# "Install Network App" prompt. Uses Ubiquiti's own `uos` CLI so the
+# package, signing, and dependency resolution match exactly what UOS
+# would do at runtime.
+#
+# - policy-rc.d short-circuits service-start attempts in postinst;
+#   systemd isn't running during `docker build`.
+# - SKIP_DPKG_CACHE=yes suppresses the ubnt-dpkg-cache post-invoke hook
+#   so we don't bake a /persistent/dpkg cache into the image (it would
+#   be shadowed by the data PVC at runtime anyway).
+RUN set -eux; \
+    printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d; \
+    chmod +x /usr/sbin/policy-rc.d; \
+    SKIP_DPKG_CACHE=yes \
+      /usr/bin/uos runnable install --version "${NETWORK_APP_VERSION}" unifi; \
+    rm /usr/sbin/policy-rc.d; \
+    rm -rf /var/lib/apt/lists/*
+
 # systemd inside the container expects SIGRTMIN+3 to perform a clean shutdown.
 STOPSIGNAL SIGRTMIN+3
 
