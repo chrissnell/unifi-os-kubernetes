@@ -156,6 +156,55 @@ The chart wires all of this for you.
 
 Toggle each via `ports.<name>.enabled` in values.
 
+## TLS via cert-manager
+
+If you run cert-manager in your cluster, the chart can issue and rotate the
+ingress TLS certificate for you:
+
+```yaml
+ingress:
+  enabled: true
+  host: unifi.example.com
+
+certManager:
+  enabled: true
+  issuerRef:
+    name: letsencrypt-prod         # ClusterIssuer name
+    kind: ClusterIssuer
+  dnsNames:
+    - unifi.example.com
+```
+
+The chart creates a `Certificate` whose secret feeds the ingress automatically.
+This controls the secret in front of the ingress only — UniFi's bundled nginx
+keeps managing its own internal cert for device-facing TLS.
+
+## Prometheus metrics
+
+Enable the bundled [unpoller](https://github.com/unpoller/unpoller) exporter to
+expose UOS metrics on `:9130`:
+
+```yaml
+unifiExporter:
+  enabled: true
+  config:
+    apiKey: "your-uos-api-key"     # generate at Settings → Admins & Users
+  serviceMonitor:
+    enabled: true                  # if you run the Prometheus Operator
+```
+
+Three auth modes:
+
+| Mode | Set | Notes |
+|------|-----|-------|
+| API key | `unifiExporter.config.apiKey` | Recommended on UOS 4+. |
+| Username + password | `unifiExporter.config.username` + `password` | Local **Viewer** admin. |
+| Pre-existing Secret | `unifiExporter.existingSecret.name` | Mount creds from ESO/Vault — chart reads `password` and/or `api-key` keys. |
+
+The exporter URL defaults to the in-cluster webui Service
+(`https://<release>-unifi-os-server-webui.<ns>.svc.cluster.local`); override
+with `unifiExporter.config.url` if you want it to scrape a different endpoint.
+
 ## Restoring a legacy controller `.unf` backup
 
 UOS's bundled Network app accepts `.unf` autobackups produced by older
@@ -167,6 +216,40 @@ self-hosted UniFi Network controllers (versions 5.x through 10.x).
 4. Upload the `.unf` file. UOS will load it into the bundled MongoDB.
 
 There's no need to manipulate Mongo dumps directly.
+
+### Re-adopting devices after a restore
+
+After restoring a backup, your devices may still hold an adoption key
+from the old controller and refuse to talk to UOS. They'll show up as
+disconnected in the device list. When that happens:
+
+1. **Factory-reset the device physically.** Hold the reset button until
+   the LED blinks the reset pattern. Software reset from the old
+   controller doesn't always clear the adoption state.
+2. **Remove the stale entry from UOS.** In the UI, click the device, open
+   its settings, and use the **Remove** button. This clears the old
+   adoption record so the device can be re-adopted fresh.
+3. **SSH to the device.** Default credentials are `ubnt` / `ubnt`:
+   ```
+   ssh ubnt@<device-ip>
+   ```
+4. **Point the device at UOS** with `set-inform`. The URL must be `http`
+   (not `https`), on port `8080`, with the `/inform` path:
+   ```
+   set-inform http://<uos-host>:8080/inform
+   ```
+   `<uos-host>` is the IP or hostname your devices can reach UOS on —
+   typically `systemIp` from your values.yaml, or the LoadBalancer IP of
+   the `communication` (8080) service.
+5. The device will show up under **Network → Devices** as **Pending
+   Adoption** within a few seconds. Click **Adopt**. UOS pushes config
+   and the device reboots.
+6. If the device doesn't appear within a minute, re-run `set-inform`
+   from the SSH session. Adoption sometimes drops the inform URL
+   mid-flight and a second nudge brings it back.
+
+Once adopted, UOS owns the inform URL and you won't need SSH again for
+that device.
 
 ## Autobackups
 
@@ -214,10 +297,40 @@ helm template unifi chart/ > /tmp/render.yaml
 5. Merging the PR triggers `build-image.yaml`, which publishes a new
    `unifi-os-server` tag.
 
+## Network app updates
+
+The image bakes in the Network app at the version Ubiquiti ships with
+this UOS Server release. **Don't use the "Update" button in the UI.**
+
+Network app upgrades happen by image bump. We check Ubiquiti daily and
+publish a new [`unifi-os-server`](https://github.com/chrissnell/unifi-os-kubernetes/pkgs/container/unifi-os-server)
+image when a new Network app is released. Pull the new image and restart
+the pod.
+
+If you do click the in-UI updater, the new `.deb` lands on the data PVC
+and UOS replays it on every container start — so the upgrade sticks. The
+cost is that your Network app version no longer matches what's pinned in
+the image, and the next image bump won't downgrade you back. To roll back
+to the image's version after an in-UI update:
+
+```
+kubectl exec -n unifi <pod> -- rm /persistent/dpkg/bullseye/packages/unifi_*.deb
+kubectl rollout restart deploy/<release>
+```
+
 ## Contributing
 
 Issues and PRs welcome. Please don't open issues for UOS bugs themselves —
 those should go to Ubiquiti.
+
+## Credits
+
+Several improvements in this repo (the discovery-shim approach for silencing
+`uos-discovery-client` polling, `Restart=no` drop-ins for the stub
+`uos-discovery-client` / `uos-agent` services, the bundled unpoller exporter,
+and a few other touches) were inspired by prior work in
+[ConnorsApps/unifi-os-helm](https://github.com/ConnorsApps/unifi-os-helm).
+Thanks to [@ConnorsApps](https://github.com/ConnorsApps) for the ideas.
 
 ## License
 

@@ -1,0 +1,176 @@
+{{- if .Values.unifiExporter.enabled }}
+{{- $fullName := include "unifi-os-server.fullname" . -}}
+{{- $name := printf "%s-exporter" $fullName | trunc 63 | trimSuffix "-" -}}
+{{- $cfg := .Values.unifiExporter.config -}}
+{{- $svcName := printf "%s-webui" $fullName | trunc 63 | trimSuffix "-" -}}
+{{- $url := default (printf "https://%s.%s.svc.cluster.local" $svcName .Release.Namespace) $cfg.url -}}
+{{- $useApiKey := and (not .Values.unifiExporter.existingSecret.name) (ne (default "" $cfg.apiKey) "") -}}
+{{- $createSecret := and (not .Values.unifiExporter.existingSecret.name) (or (ne (default "" $cfg.password) "") (ne (default "" $cfg.apiKey) "")) -}}
+{{- $secretName := default (printf "%s-creds" $name) .Values.unifiExporter.existingSecret.name -}}
+{{- $passwordKey := default "password" .Values.unifiExporter.existingSecret.passwordKey -}}
+{{- $apiKeyKey := default "api-key" .Values.unifiExporter.existingSecret.apiKeyKey -}}
+{{- $componentLabels := dict "app.kubernetes.io/component" "unifi-exporter" -}}
+{{- if $createSecret }}
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ $secretName }}
+  labels:
+    {{- include "unifi-os-server.labels" . | nindent 4 }}
+    {{- range $k, $v := $componentLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+type: Opaque
+stringData:
+  {{- if $cfg.password }}
+  {{ $passwordKey }}: {{ $cfg.password | quote }}
+  {{- end }}
+  {{- if $cfg.apiKey }}
+  {{ $apiKeyKey }}: {{ $cfg.apiKey | quote }}
+  {{- end }}
+{{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "unifi-os-server.labels" . | nindent 4 }}
+    {{- range $k, $v := $componentLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "unifi-os-server.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: unifi-exporter
+  ports:
+    - name: metrics
+      port: 9130
+      targetPort: metrics
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "unifi-os-server.labels" . | nindent 4 }}
+    {{- range $k, $v := $componentLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "unifi-os-server.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: unifi-exporter
+  template:
+    metadata:
+      labels:
+        {{- include "unifi-os-server.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: unifi-exporter
+      {{- with .Values.unifiExporter.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: unpoller
+          image: "{{ .Values.unifiExporter.image.repository }}:{{ .Values.unifiExporter.image.tag }}"
+          imagePullPolicy: {{ .Values.unifiExporter.image.pullPolicy }}
+          ports:
+            - name: metrics
+              containerPort: 9130
+              protocol: TCP
+          env:
+            - name: UP_PROMETHEUS_HTTP_LISTEN
+              value: "0.0.0.0:9130"
+            - name: UP_PROMETHEUS_DISABLE
+              value: "false"
+            - name: UP_INFLUXDB_DISABLE
+              value: "true"
+            - name: UP_LOKI_DISABLE
+              value: "true"
+            - name: UP_UNIFI_DEFAULT_URL
+              value: {{ $url | quote }}
+            - name: UP_UNIFI_DEFAULT_VERIFY_SSL
+              value: {{ $cfg.verifyTLS | quote }}
+            - name: UP_UNIFI_DEFAULT_SAVE_SITES
+              value: {{ default true $cfg.saveSites | quote }}
+            - name: UP_UNIFI_DEFAULT_SAVE_DPI
+              value: {{ default false $cfg.saveDpi | quote }}
+            - name: UP_UNIFI_DEFAULT_SAVE_EVENTS
+              value: {{ default false $cfg.saveEvents | quote }}
+            - name: UP_UNIFI_DEFAULT_SAVE_ALARMS
+              value: {{ default false $cfg.saveAlarms | quote }}
+            - name: UP_UNIFI_DEFAULT_SAVE_ANOMALIES
+              value: {{ default false $cfg.saveAnomalies | quote }}
+            - name: UP_UNIFI_DEFAULT_SAVE_IDS
+              value: {{ default false $cfg.saveIds | quote }}
+            - name: UP_UNIFI_DEFAULT_HASH_PII
+              value: {{ default false $cfg.hashPii | quote }}
+            {{- if $useApiKey }}
+            # API-key auth (UniFi OS 4+): unpoller sends X-API-Key when
+            # UP_UNIFI_DEFAULT_API_KEY is set and skips user/pass login.
+            - name: UP_UNIFI_DEFAULT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: {{ $apiKeyKey }}
+            {{- else if .Values.unifiExporter.existingSecret.name }}
+              {{- /* user-provided secret: prefer api-key path, else username+password */}}
+              {{- if $cfg.username }}
+            - name: UP_UNIFI_DEFAULT_USER
+              value: {{ $cfg.username | quote }}
+            - name: UP_UNIFI_DEFAULT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: {{ $passwordKey }}
+              {{- else }}
+            - name: UP_UNIFI_DEFAULT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: {{ $apiKeyKey }}
+              {{- end }}
+            {{- else if $cfg.password }}
+            - name: UP_UNIFI_DEFAULT_USER
+              value: {{ required "unifiExporter.config.username is required when using password auth" $cfg.username | quote }}
+            - name: UP_UNIFI_DEFAULT_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: {{ $passwordKey }}
+            {{- end }}
+          resources:
+            {{- toYaml .Values.unifiExporter.resources | nindent 12 }}
+{{- if .Values.unifiExporter.serviceMonitor.enabled }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "unifi-os-server.labels" . | nindent 4 }}
+    {{- range $k, $v := $componentLabels }}
+    {{ $k }}: {{ $v | quote }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "unifi-os-server.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: unifi-exporter
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.unifiExporter.serviceMonitor.interval | quote }}
+      scrapeTimeout: {{ .Values.unifiExporter.serviceMonitor.scrapeTimeout | quote }}
+{{- end }}
+{{- end }}

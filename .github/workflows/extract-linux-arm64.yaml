@@ -61,6 +61,49 @@ jobs:
           sudo chown -R runner:runner /home/runner/.local/share/containers/storage
           podman images
 
+      - name: Capture upstream OCI config + drift detection
+        # See extract-linux-amd64.yaml for rationale.
+        run: |
+          set -euo pipefail
+          PODMAN_IMAGE_ID=$(podman images uosserver --noheading | awk 'NR==1{print $3}')
+          if [ -z "$PODMAN_IMAGE_ID" ]; then
+            echo "uosserver image not found in podman storage" >&2
+            podman images
+            exit 1
+          fi
+          podman inspect "$PODMAN_IMAGE_ID" --format '{{json .Config}}' > /tmp/upstream-config.json
+
+          {
+            echo "## Upstream OCI image config (linux/arm64)"
+            echo ""
+            echo "\`\`\`json"
+            jq . /tmp/upstream-config.json
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          ENTRYPOINT=$(jq -c '.Entrypoint // []' /tmp/upstream-config.json)
+          CMD=$(jq -c '.Cmd // []' /tmp/upstream-config.json)
+          echo "Upstream Entrypoint: $ENTRYPOINT"
+          echo "Upstream Cmd:        $CMD"
+
+          COMBINED=$(jq -r '((.Entrypoint // []) + (.Cmd // [])) | join(" ")' /tmp/upstream-config.json)
+          case "$COMBINED" in
+            *"/sbin/init"*|*" init"*|"init"|"/sbin/init")
+              echo "Upstream entrypoint matches expected systemd init invocation."
+              ;;
+            *)
+              echo "::error::Upstream entrypoint changed — expected /sbin/init, got: $COMBINED"
+              echo "::error::Update docker/entrypoint.sh and re-run."
+              exit 1
+              ;;
+          esac
+
+      - name: Upload upstream OCI config artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-config-linux-arm64
+          path: /tmp/upstream-config.json
+
       - name: Login to GHCR
         uses: redhat-actions/podman-login@v1
         with:

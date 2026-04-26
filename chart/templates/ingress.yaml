@@ -17,8 +17,9 @@ spec:
   tls:
     - hosts:
         - {{ .Values.ingress.host | quote }}
-      {{- if .Values.ingress.tls.secretName }}
-      secretName: {{ .Values.ingress.tls.secretName }}
+      {{- $secret := include "unifi-os-server.tlsSecretName" . }}
+      {{- if $secret }}
+      secretName: {{ $secret }}
       {{- end }}
   {{- end }}
   rules:

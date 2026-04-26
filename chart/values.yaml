@@ -164,9 +164,42 @@ ingress:
     nginx.ingress.kubernetes.io/backend-protocol: HTTPS
   tls:
     enabled: true
+    # Empty = derive name from cert-manager (if enabled) or default to
+    # "<release>-unifi-os-server-tls". Set explicitly to point the ingress
+    # at a Secret you manage out of band.
     secretName: ""
   path: /
   pathType: Prefix
+
+# Optional cert-manager Certificate for the ingress TLS secret. When enabled,
+# cert-manager issues and rotates a cert into <fullname>-tls (or
+# certManager.secretName if set), and the ingress template picks that secret
+# up automatically.
+#
+# Note: this controls the secret in front of the ingress, not the cert UOS's
+# bundled nginx serves to devices. UniFi rotates its internal cert itself.
+certManager:
+  enabled: false
+  # Override the generated Secret name. Leave empty for "<fullname>-tls".
+  secretName: ""
+  issuerRef:
+    name: ""              # required when enabled (e.g. "letsencrypt-prod")
+    kind: ClusterIssuer   # or "Issuer"
+    group: cert-manager.io
+  # Required: at least one of dnsNames or ipAddresses.
+  dnsNames: []
+  # - unifi.example.com
+  ipAddresses: []
+  commonName: ""
+  duration: ""             # e.g. "2160h"
+  renewBefore: ""          # e.g. "360h"
+  subject: {}
+  privateKey: {}
+  #  algorithm: ECDSA
+  #  size: 256
+  #  rotationPolicy: Always
+  usages: []
+  annotations: {}
 
 # Single-replica only — this is a stateful appliance.
 replicaCount: 1
@@ -199,7 +232,64 @@ probes:
 podAnnotations: {}
 podLabels: {}
 
-# Add the host IP as `host.docker.internal` in /etc/hosts (matches lemker
-# reference manifest behaviour; UOS uses this for some inter-service calls).
-hostDockerInternal:
-  enabled: true
+# Optional Prometheus exporter (unpoller) — runs as a separate Deployment that
+# scrapes UOS over HTTPS and exposes /metrics on port 9130. Three auth modes:
+#
+#   1. API key (recommended, UniFi OS 4+):
+#        unifiExporter.config.apiKey: "..."
+#      Generate at Settings → Admins & Users → (your user) → API Key.
+#
+#   2. Username + password (local Viewer admin):
+#        unifiExporter.config.username: "metrics"
+#        unifiExporter.config.password: "..."
+#
+#   3. Pre-existing Secret (mount whatever you keep in ESO/Vault):
+#        unifiExporter.existingSecret.name: my-secret
+#        unifiExporter.existingSecret.passwordKey: password
+#        unifiExporter.existingSecret.apiKeyKey:   api-key
+#      The api-key field, when non-empty, takes precedence over password.
+unifiExporter:
+  enabled: false
+  image:
+    repository: ghcr.io/unpoller/unpoller
+    tag: "v2.34.0"
+    pullPolicy: IfNotPresent
+  config:
+    # UniFi OS controller URL. Empty = derive from the chart's webui Service:
+    # https://<release>-unifi-os-server-webui.<namespace>.svc.cluster.local
+    url: ""
+    username: ""
+    password: ""
+    apiKey: ""
+    verifyTLS: false
+    saveSites: true
+    saveDpi: false
+    saveEvents: false
+    saveAlarms: false
+    saveAnomalies: false
+    saveIds: false
+    hashPii: false
+  existingSecret:
+    name: ""
+    passwordKey: password
+    apiKeyKey: api-key
+  # Annotations applied to the exporter pod. Use these for annotation-based
+  # Prometheus scrape discovery (the default kubernetes_sd_configs
+  # configuration in the prometheus-community chart). Leave empty if you
+  # use ServiceMonitor instead.
+  podAnnotations: {}
+  #  prometheus.io/scrape: "true"
+  #  prometheus.io/port: "9130"
+  #  prometheus.io/path: "/metrics"
+  serviceMonitor:
+    # Requires the Prometheus Operator CRDs.
+    enabled: false
+    interval: 30s
+    scrapeTimeout: 10s
+  resources:
+    requests:
+      cpu: 50m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi

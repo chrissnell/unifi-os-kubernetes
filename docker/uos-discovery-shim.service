@@ -1,0 +1,15 @@
+[Unit]
+Description=UniFi OS discovery-client shim (replaces stub uos-discovery-client)
+After=network.target
+Before=unifi-core.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/node /usr/local/lib/uos-discovery-shim/shim.js
+Restart=on-failure
+RestartSec=2s
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
