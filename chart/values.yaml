@@ -273,6 +273,14 @@ unifiExporter:
     name: ""
     passwordKey: password
     apiKeyKey: api-key
+  # Annotations applied to the exporter pod. Use these for annotation-based
+  # Prometheus scrape discovery (the default kubernetes_sd_configs
+  # configuration in the prometheus-community chart). Leave empty if you
+  # use ServiceMonitor instead.
+  podAnnotations: {}
+  #  prometheus.io/scrape: "true"
+  #  prometheus.io/port: "9130"
+  #  prometheus.io/path: "/metrics"
   serviceMonitor:
     # Requires the Prometheus Operator CRDs.
     enabled: false

@@ -181,10 +181,29 @@ keeps managing its own internal cert for device-facing TLS.
 
 ## Prometheus metrics
 
-The chart ships an opt-in [unpoller](https://github.com/unpoller/unpoller)
-exporter (`unifiExporter.enabled: true`) that scrapes UOS and exposes metrics
-on `:9130`. See `chart/values.yaml` for auth options and the optional
-`ServiceMonitor`.
+Enable the bundled [unpoller](https://github.com/unpoller/unpoller) exporter to
+expose UOS metrics on `:9130`:
+
+```yaml
+unifiExporter:
+  enabled: true
+  config:
+    apiKey: "your-uos-api-key"     # generate at Settings → Admins & Users
+  serviceMonitor:
+    enabled: true                  # if you run the Prometheus Operator
+```
+
+Three auth modes:
+
+| Mode | Set | Notes |
+|------|-----|-------|
+| API key | `unifiExporter.config.apiKey` | Recommended on UOS 4+. |
+| Username + password | `unifiExporter.config.username` + `password` | Local **Viewer** admin. |
+| Pre-existing Secret | `unifiExporter.existingSecret.name` | Mount creds from ESO/Vault — chart reads `password` and/or `api-key` keys. |
+
+The exporter URL defaults to the in-cluster webui Service
+(`https://<release>-unifi-os-server-webui.<ns>.svc.cluster.local`); override
+with `unifiExporter.config.url` if you want it to scrape a different endpoint.
 
 ## Restoring a legacy controller `.unf` backup
 

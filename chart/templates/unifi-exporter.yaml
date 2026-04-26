@@ -71,6 +71,10 @@ spec:
       labels:
         {{- include "unifi-os-server.selectorLabels" . | nindent 8 }}
         app.kubernetes.io/component: unifi-exporter
+      {{- with .Values.unifiExporter.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
