@@ -126,9 +126,13 @@ service:
   loadBalancerIP: ""
   # Annotations applied to all created services.
   annotations: {}
-  # External traffic policy for LoadBalancer/NodePort services. "Local"
-  # preserves source IP for STUN/discovery to work correctly.
-  externalTrafficPolicy: Local
+  # External traffic policy for LoadBalancer/NodePort services.
+  # "Cluster" works in all cases. "Local" preserves source IP but with
+  # MetalLB+shared-IP it requires *every* sharing service to land on the
+  # node hosting the pod, which isn't guaranteed; if MetalLB picks any
+  # other node, traffic gets dropped (RST). Default to "Cluster" for
+  # reliability; switch to "Local" only if you can guarantee node placement.
+  externalTrafficPolicy: Cluster
 
 ports:
   webui:            { enabled: true,  port: 443,   targetPort: 443,   protocol: TCP, description: "Web UI / API" }
