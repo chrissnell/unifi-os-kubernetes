@@ -1,0 +1,32 @@
+# Example values: home-lab style. NFS-backed PVs with separate backup
+# storage and a MetalLB LoadBalancer.
+
+systemIp: unifi.example.com
+
+service:
+  type: LoadBalancer
+  loadBalancerIP: 192.0.2.10
+  externalTrafficPolicy: Local
+
+persistence:
+  data:
+    enabled: true
+    size: 20Gi
+    accessMode: ReadWriteOnce
+    nfs:
+      server: 192.0.2.5
+      path:   /volume1/NFS/unifi-os/data
+  mongo:
+    enabled: true
+    size: 10Gi
+    accessMode: ReadWriteOnce
+    nfs:
+      server: 192.0.2.5
+      path:   /volume1/NFS/unifi-os/mongo
+  backups:
+    enabled: true
+    size: 50Gi
+    accessMode: ReadWriteOnce
+    nfs:
+      server: 192.0.2.5
+      path:   /volume1/NFS/unifi-os/backups

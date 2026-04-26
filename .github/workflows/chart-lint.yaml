@@ -1,0 +1,45 @@
+---
+name: Lint Helm chart
+
+on:
+  pull_request:
+    paths:
+      - 'chart/**'
+      - '.github/workflows/chart-lint.yaml'
+  push:
+    branches: [main]
+    paths:
+      - 'chart/**'
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.2
+
+      - name: Helm dependency update
+        run: helm dependency update chart/
+
+      - name: Helm lint
+        run: helm lint chart/
+
+      - name: Render default values
+        run: helm template unifi chart/ > /tmp/render-default.yaml
+
+      - name: Render with ingress + optional ports enabled
+        run: |
+          helm template unifi chart/ \
+            --set ingress.enabled=true \
+            --set ingress.host=unifi.example.com \
+            --set ports.networkApp.enabled=true \
+            --set ports.hotspotSecured.enabled=true \
+            --set ports.siteSupervisor.enabled=true \
+            --set ports.aqmps.enabled=true \
+            > /tmp/render-full.yaml

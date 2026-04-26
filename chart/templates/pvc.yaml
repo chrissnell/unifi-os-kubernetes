@@ -1,0 +1,132 @@
+{{- if and .Values.persistence.data.enabled (not .Values.persistence.data.existingClaim) }}
+{{- if .Values.persistence.data.nfs }}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ include "unifi-os-server.fullname" . }}-data
+  labels:
+    {{- include "unifi-os-server.labels" . | nindent 4 }}
+spec:
+  capacity:
+    storage: {{ .Values.persistence.data.size }}
+  accessModes:
+    - {{ .Values.persistence.data.accessMode }}
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: {{ default "" .Values.persistence.data.storageClass | quote }}
+  nfs:
+    server: {{ .Values.persistence.data.nfs.server }}
+    path:   {{ .Values.persistence.data.nfs.path }}
+{{- end }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "unifi-os-server.fullname" . }}-data
+  labels:
+    {{- include "unifi-os-server.labels" . | nindent 4 }}
+  {{- with .Values.persistence.data.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.data.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.data.size }}
+  {{- if .Values.persistence.data.nfs }}
+  volumeName: {{ include "unifi-os-server.fullname" . }}-data
+  storageClassName: {{ default "" .Values.persistence.data.storageClass | quote }}
+  {{- else if .Values.persistence.data.storageClass }}
+  storageClassName: {{ .Values.persistence.data.storageClass | quote }}
+  {{- end }}
+{{- end }}
+{{- if and .Values.persistence.mongo.enabled (not .Values.persistence.mongo.existingClaim) }}
+{{- if .Values.persistence.mongo.nfs }}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ include "unifi-os-server.fullname" . }}-mongo
+  labels:
+    {{- include "unifi-os-server.labels" . | nindent 4 }}
+spec:
+  capacity:
+    storage: {{ .Values.persistence.mongo.size }}
+  accessModes:
+    - {{ .Values.persistence.mongo.accessMode }}
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: {{ default "" .Values.persistence.mongo.storageClass | quote }}
+  nfs:
+    server: {{ .Values.persistence.mongo.nfs.server }}
+    path:   {{ .Values.persistence.mongo.nfs.path }}
+{{- end }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "unifi-os-server.fullname" . }}-mongo
+  labels:
+    {{- include "unifi-os-server.labels" . | nindent 4 }}
+  {{- with .Values.persistence.mongo.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.mongo.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.mongo.size }}
+  {{- if .Values.persistence.mongo.nfs }}
+  volumeName: {{ include "unifi-os-server.fullname" . }}-mongo
+  storageClassName: {{ default "" .Values.persistence.mongo.storageClass | quote }}
+  {{- else if .Values.persistence.mongo.storageClass }}
+  storageClassName: {{ .Values.persistence.mongo.storageClass | quote }}
+  {{- end }}
+{{- end }}
+{{- if and .Values.persistence.backups.enabled (not .Values.persistence.backups.existingClaim) }}
+{{- if .Values.persistence.backups.nfs }}
+---
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: {{ include "unifi-os-server.fullname" . }}-backups
+  labels:
+    {{- include "unifi-os-server.labels" . | nindent 4 }}
+spec:
+  capacity:
+    storage: {{ .Values.persistence.backups.size }}
+  accessModes:
+    - {{ .Values.persistence.backups.accessMode }}
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: {{ default "" .Values.persistence.backups.storageClass | quote }}
+  nfs:
+    server: {{ .Values.persistence.backups.nfs.server }}
+    path:   {{ .Values.persistence.backups.nfs.path }}
+{{- end }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "unifi-os-server.fullname" . }}-backups
+  labels:
+    {{- include "unifi-os-server.labels" . | nindent 4 }}
+  {{- with .Values.persistence.backups.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.backups.accessMode }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.backups.size }}
+  {{- if .Values.persistence.backups.nfs }}
+  volumeName: {{ include "unifi-os-server.fullname" . }}-backups
+  storageClassName: {{ default "" .Values.persistence.backups.storageClass | quote }}
+  {{- else if .Values.persistence.backups.storageClass }}
+  storageClassName: {{ .Values.persistence.backups.storageClass | quote }}
+  {{- end }}
+{{- end }}

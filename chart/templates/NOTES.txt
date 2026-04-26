@@ -1,0 +1,29 @@
+UniFi OS Server has been deployed.
+
+Release: {{ .Release.Name }}
+Namespace: {{ .Release.Namespace }}
+Image: {{ include "unifi-os-server.image" . }}
+
+  Note: UOS boots a full systemd service stack (mongod, postgresql, rabbitmq,
+  nginx, java network app, go services). First boot can take several minutes
+  before /api/ping responds. Watch progress with:
+
+    kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/instance={{ .Release.Name }} -f
+
+Web UI:
+{{- if .Values.ingress.enabled }}
+  https://{{ .Values.ingress.host }}{{ .Values.ingress.path }}
+{{- else if eq .Values.service.type "LoadBalancer" }}
+  Once the LoadBalancer is provisioned, browse to https://<external-ip>/
+  Find the IP with:
+    kubectl get svc -n {{ .Release.Namespace }} {{ include "unifi-os-server.fullname" . }}-webui -o wide
+{{- else }}
+  Port-forward to access the UI:
+    kubectl port-forward -n {{ .Release.Namespace }} svc/{{ include "unifi-os-server.fullname" . }}-webui 8443:443
+  Then open https://localhost:8443/
+{{- end }}
+
+Restoring a legacy UniFi Network controller backup:
+  Open the Network app inside UOS → Settings → System → Backup →
+  "Restore Backup", and upload your .unf file. UOS will load it into the
+  bundled MongoDB.

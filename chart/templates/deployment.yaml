@@ -1,0 +1,198 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "unifi-os-server.fullname" . }}
+  labels:
+    {{- include "unifi-os-server.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    {{- toYaml .Values.strategy | nindent 4 }}
+  selector:
+    matchLabels:
+      {{- include "unifi-os-server.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "unifi-os-server.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: unifi-os-server
+          image: {{ include "unifi-os-server.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          env:
+            - name: HOST_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            {{- if .Values.systemIp }}
+            - name: UOS_SYSTEM_IP
+              value: {{ .Values.systemIp | quote }}
+            {{- end }}
+            {{- if .Values.uosUuid }}
+            - name: UOS_UUID
+              value: {{ .Values.uosUuid | quote }}
+            {{- end }}
+            {{- if .Values.hardwarePlatform }}
+            - name: HARDWARE_PLATFORM
+              value: {{ .Values.hardwarePlatform | quote }}
+            {{- end }}
+            {{- range $k, $v := .Values.extraEnv }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+          {{- if .Values.hostDockerInternal.enabled }}
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/bash
+                  - -c
+                  - 'echo "$HOST_IP host.docker.internal" >> /etc/hosts'
+          {{- end }}
+          ports:
+            {{- range $name, $p := .Values.ports }}
+            {{- if $p.enabled }}
+            - name: {{ $name | lower | trunc 15 }}
+              containerPort: {{ $p.targetPort }}
+              protocol: {{ $p.protocol }}
+            {{- end }}
+            {{- end }}
+          {{- if .Values.probes.liveness.enabled }}
+          livenessProbe:
+            {{- omit .Values.probes.liveness "enabled" | toYaml | nindent 12 }}
+          {{- end }}
+          {{- if .Values.probes.readiness.enabled }}
+          readinessProbe:
+            {{- omit .Values.probes.readiness "enabled" | toYaml | nindent 12 }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            {{- if .Values.cgroupHostPath.enabled }}
+            - name: cgroup
+              mountPath: /sys/fs/cgroup
+            {{- end }}
+            - name: tmp-run
+              mountPath: /run
+            - name: tmp-run-lock
+              mountPath: /run/lock
+            - name: tmp-tmp
+              mountPath: /tmp
+            - name: tmp-journal
+              mountPath: /var/lib/journal
+            - name: tmp-unifi
+              mountPath: /var/opt/unifi/tmp
+            {{- if .Values.persistence.data.enabled }}
+            - name: data
+              mountPath: /persistent
+              subPath: persistent
+            - name: data
+              mountPath: /var/log
+              subPath: log
+            - name: data
+              mountPath: /data
+              subPath: data
+            - name: data
+              mountPath: /srv
+              subPath: srv
+            - name: data
+              mountPath: /var/lib/unifi
+              subPath: unifi
+            - name: data
+              mountPath: /etc/rabbitmq/ssl
+              subPath: rabbitmq-ssl
+            {{- end }}
+            {{- if .Values.persistence.mongo.enabled }}
+            - name: mongo
+              mountPath: /var/lib/mongodb
+            {{- end }}
+            {{- if .Values.persistence.backups.enabled }}
+            - name: backups
+              mountPath: /var/lib/unifi/data/backup
+            {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      volumes:
+        {{- if .Values.cgroupHostPath.enabled }}
+        - name: cgroup
+          hostPath:
+            path: {{ .Values.cgroupHostPath.path }}
+        {{- end }}
+        - name: tmp-run
+          emptyDir:
+            medium: Memory
+            {{- with .Values.tmpfs.run.sizeLimit }}
+            sizeLimit: {{ . }}
+            {{- end }}
+        - name: tmp-run-lock
+          emptyDir:
+            medium: Memory
+            {{- with .Values.tmpfs.runLock.sizeLimit }}
+            sizeLimit: {{ . }}
+            {{- end }}
+        - name: tmp-tmp
+          emptyDir:
+            medium: Memory
+            {{- with .Values.tmpfs.tmp.sizeLimit }}
+            sizeLimit: {{ . }}
+            {{- end }}
+        - name: tmp-journal
+          emptyDir:
+            medium: Memory
+            {{- with .Values.tmpfs.journal.sizeLimit }}
+            sizeLimit: {{ . }}
+            {{- end }}
+        - name: tmp-unifi
+          emptyDir:
+            medium: Memory
+            {{- with .Values.tmpfs.unifiTmp.sizeLimit }}
+            sizeLimit: {{ . }}
+            {{- end }}
+        {{- if .Values.persistence.data.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "unifi-os-server.dataPVC" . }}
+        {{- end }}
+        {{- if .Values.persistence.mongo.enabled }}
+        - name: mongo
+          persistentVolumeClaim:
+            claimName: {{ include "unifi-os-server.mongoPVC" . }}
+        {{- end }}
+        {{- if .Values.persistence.backups.enabled }}
+        - name: backups
+          persistentVolumeClaim:
+            claimName: {{ include "unifi-os-server.backupsPVC" . }}
+        {{- end }}

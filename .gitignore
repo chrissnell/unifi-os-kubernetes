@@ -1,0 +1,6 @@
+scratch/
+*.tgz
+.DS_Store
+charts/*.tgz
+chart/charts/*.tgz
+chart/Chart.lock

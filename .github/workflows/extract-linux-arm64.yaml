@@ -1,0 +1,83 @@
+---
+name: Extract uosserver image (linux/arm64)
+
+# arm64 sibling of extract-linux-amd64.yaml. Runs on the GitHub-hosted arm64
+# runner so the installer's native binaries execute correctly.
+
+on:
+  workflow_call:
+    inputs:
+      UOS_DOWNLOAD:
+        required: true
+        type: string
+    outputs:
+      PODMAN_IMAGE_TAG:
+        description: "Tag of the extracted uosserver image"
+        value: ${{ jobs.extract-image.outputs.PODMAN_IMAGE_TAG }}
+  workflow_dispatch:
+    inputs:
+      UOS_DOWNLOAD:
+        description: "UniFi OS Server installer URL (linux-arm64)"
+        required: true
+        type: string
+
+env:
+  REGISTRY: ghcr.io
+  REPO_OWNER: ${{ github.repository_owner }}
+
+jobs:
+  extract-image:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      PODMAN_IMAGE_TAG: ${{ steps.tag.outputs.PODMAN_IMAGE_TAG }}
+
+    steps:
+      - name: Free disk space on runner
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Run UniFi OS Server installer
+        run: |
+          mkdir -p /home/runner/.config/containers
+          chmod 755 /home/runner /home/runner/.config /home/runner/.config/containers
+          touch /home/runner/.config/containers/storage.conf
+          chmod 755 /home/runner/.config/containers/storage.conf
+          curl -fsSL -o unifi-os-server "${{ inputs.UOS_DOWNLOAD }}"
+          sudo chmod +x unifi-os-server
+          echo "y" | sudo ./unifi-os-server || true
+
+      - name: Move uosserver image into runner podman storage
+        run: |
+          for sub in overlay overlay-images overlay-layers; do
+            mkdir -p "/home/runner/.local/share/containers/storage/$sub"
+            sudo cp -a "/home/uosserver/.local/share/containers/storage/$sub/." \
+              "/home/runner/.local/share/containers/storage/$sub/"
+          done
+          sudo chown -R runner:runner /home/runner/.local/share/containers/storage
+          podman images
+
+      - name: Login to GHCR
+        uses: redhat-actions/podman-login@v1
+        with:
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          registry: ${{ env.REGISTRY }}
+
+      - name: Push uosserver image
+        id: tag
+        run: |
+          PODMAN_IMAGE_TAG=$(podman images uosserver --noheading | awk 'NR==1{print $2}')
+          PODMAN_IMAGE_ID=$(podman images uosserver --noheading | awk 'NR==1{print $3}')
+          if [ -z "$PODMAN_IMAGE_TAG" ] || [ -z "$PODMAN_IMAGE_ID" ]; then
+            echo "uosserver image not found in podman storage" >&2
+            podman images
+            exit 1
+          fi
+          podman push "$PODMAN_IMAGE_ID" \
+            "$REGISTRY/$REPO_OWNER/uosserver:${PODMAN_IMAGE_TAG}-linux-arm64"
+          echo "PODMAN_IMAGE_TAG=$PODMAN_IMAGE_TAG" >> "$GITHUB_OUTPUT"

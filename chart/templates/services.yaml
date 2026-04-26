@@ -1,0 +1,35 @@
+{{- $fullName := include "unifi-os-server.fullname" . -}}
+{{- $sel := include "unifi-os-server.selectorLabels" . -}}
+{{- $labels := include "unifi-os-server.labels" . -}}
+{{- $svc := .Values.service -}}
+{{- range $name, $p := .Values.ports }}
+{{- if $p.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ printf "%s-%s" $fullName ($name | kebabcase) | trunc 63 | trimSuffix "-" }}
+  labels:
+    {{- $labels | nindent 4 }}
+    unifi-os-server.io/port: {{ $name | quote }}
+  {{- with $svc.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ $svc.type }}
+  {{- if and (eq $svc.type "LoadBalancer") $svc.loadBalancerIP }}
+  loadBalancerIP: {{ $svc.loadBalancerIP }}
+  {{- end }}
+  {{- if and (or (eq $svc.type "LoadBalancer") (eq $svc.type "NodePort")) $svc.externalTrafficPolicy }}
+  externalTrafficPolicy: {{ $svc.externalTrafficPolicy }}
+  {{- end }}
+  selector:
+    {{- $sel | nindent 4 }}
+  ports:
+    - name: {{ $name | lower | trunc 15 }}
+      port: {{ $p.port }}
+      targetPort: {{ $p.targetPort }}
+      protocol: {{ $p.protocol }}
+{{- end }}
+{{- end }}

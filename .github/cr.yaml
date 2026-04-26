@@ -1,0 +1,6 @@
+---
+# chart-releaser configuration. The chart lives in `chart/`, not in the
+# default `charts/` dir, so we point the action at it explicitly.
+chart-dirs:
+  - chart
+release-name-template: "chart-{{ .Version }}"

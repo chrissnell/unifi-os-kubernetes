@@ -1,0 +1,129 @@
+---
+name: Check for new UniFi OS Server release
+
+# Polls Ubiquiti's official firmware-latest API for the current release-channel
+# UOS version. If the version differs from what's pinned in docker/Dockerfile,
+# extracts the per-arch images, builds the multi-arch manifest, and opens a PR
+# updating the FROM tag and UOS_SERVER_VERSION.
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * *"
+
+permissions:
+  contents: write
+  packages: write
+  pull-requests: write
+
+jobs:
+  release-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      UOS_VERSION: ${{ steps.version.outputs.UOS_VERSION }}
+      UOS_DOWNLOAD_AMD64: ${{ steps.version.outputs.UOS_DOWNLOAD_AMD64 }}
+      UOS_DOWNLOAD_ARM64: ${{ steps.version.outputs.UOS_DOWNLOAD_ARM64 }}
+      RELEASED: ${{ steps.release.outputs.released }}
+    steps:
+      - name: Fetch latest release metadata from Ubiquiti
+        run: |
+          curl -fsSL \
+            "https://fw-update.ubnt.com/api/firmware-latest?filter=eq~~product~~unifi-os-server&filter=eq~~platform~~linux-x64&filter=eq~~channel~~release" \
+            -o linux-amd64.json
+          curl -fsSL \
+            "https://fw-update.ubnt.com/api/firmware-latest?filter=eq~~product~~unifi-os-server&filter=eq~~platform~~linux-arm64&filter=eq~~channel~~release" \
+            -o linux-arm64.json
+          jq empty linux-amd64.json
+          jq empty linux-arm64.json
+
+      - name: Extract version and download URLs
+        id: version
+        run: |
+          if [ "$(jq '._embedded.firmware | length' linux-amd64.json)" -eq 0 ]; then
+            echo "No firmware entries returned by Ubiquiti API" >&2
+            exit 1
+          fi
+
+          UOS_VERSION=$(jq -r '._embedded.firmware[0].version // empty' linux-amd64.json | sed 's/^v//')
+          UOS_DOWNLOAD_AMD64=$(jq -r '._embedded.firmware[0]._links.data.href // empty' linux-amd64.json)
+          UOS_DOWNLOAD_ARM64=$(jq -r '._embedded.firmware[0]._links.data.href // empty' linux-arm64.json)
+
+          if [ -z "$UOS_VERSION" ] || [ -z "$UOS_DOWNLOAD_AMD64" ] || [ -z "$UOS_DOWNLOAD_ARM64" ]; then
+            echo "Missing version or download URL in API response" >&2
+            exit 1
+          fi
+
+          {
+            echo "UOS_VERSION=$UOS_VERSION"
+            echo "UOS_DOWNLOAD_AMD64=$UOS_DOWNLOAD_AMD64"
+            echo "UOS_DOWNLOAD_ARM64=$UOS_DOWNLOAD_ARM64"
+          } | tee -a "$GITHUB_OUTPUT" "$GITHUB_ENV"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compare against pinned Dockerfile version
+        id: release
+        run: |
+          if grep -q "UOS_SERVER_VERSION=\"${UOS_VERSION}\"" docker/Dockerfile; then
+            echo "UOS_SERVER_VERSION ${UOS_VERSION} already pinned, nothing to do"
+            echo "released=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "New UOS_SERVER_VERSION ${UOS_VERSION} detected"
+            echo "released=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  extract-linux-amd64:
+    needs: release-check
+    if: needs.release-check.outputs.RELEASED == 'false'
+    uses: ./.github/workflows/extract-linux-amd64.yaml
+    with:
+      UOS_DOWNLOAD: ${{ needs.release-check.outputs.UOS_DOWNLOAD_AMD64 }}
+
+  extract-linux-arm64:
+    needs: release-check
+    if: needs.release-check.outputs.RELEASED == 'false'
+    uses: ./.github/workflows/extract-linux-arm64.yaml
+    with:
+      UOS_DOWNLOAD: ${{ needs.release-check.outputs.UOS_DOWNLOAD_ARM64 }}
+
+  build-uosserver:
+    needs: [release-check, extract-linux-amd64, extract-linux-arm64]
+    if: needs.release-check.outputs.RELEASED == 'false'
+    uses: ./.github/workflows/build-uosserver.yaml
+    with:
+      tag: ${{ needs.extract-linux-amd64.outputs.PODMAN_IMAGE_TAG }}
+
+  open-update-pr:
+    needs: [release-check, extract-linux-amd64, build-uosserver]
+    if: needs.release-check.outputs.RELEASED == 'false'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      UOS_VERSION: ${{ needs.release-check.outputs.UOS_VERSION }}
+      PODMAN_IMAGE_TAG: ${{ needs.extract-linux-amd64.outputs.PODMAN_IMAGE_TAG }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Bump UOSSERVER_TAG and UOS_SERVER_VERSION in Dockerfile
+        run: |
+          sed -i "s|^ARG UOSSERVER_TAG=.*|ARG UOSSERVER_TAG=${PODMAN_IMAGE_TAG}-multiarch|" docker/Dockerfile
+          sed -i "s|^ENV UOS_SERVER_VERSION=.*|ENV UOS_SERVER_VERSION=\"${UOS_VERSION}\"|" docker/Dockerfile
+
+      - name: Open pull request
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: bump UniFi OS Server to ${{ env.UOS_VERSION }}"
+          branch: bump/uos-${{ env.UOS_VERSION }}
+          base: main
+          title: "Bump UniFi OS Server to ${{ env.UOS_VERSION }}"
+          body: |
+            Automated bump:
+
+            * `uosserver` base → `${{ env.PODMAN_IMAGE_TAG }}-multiarch`
+            * `UOS_SERVER_VERSION` → `${{ env.UOS_VERSION }}`
+
+            Source: https://fw-update.ubnt.com/api/firmware-latest (release channel).

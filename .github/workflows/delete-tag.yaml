@@ -1,0 +1,28 @@
+---
+name: Delete GHCR tag
+
+on:
+  workflow_dispatch:
+    inputs:
+      package:
+        description: "GHCR package name (e.g. uosserver, unifi-os-server)"
+        required: true
+        type: string
+      tag:
+        description: "Tag to delete"
+        required: true
+        type: string
+
+permissions:
+  packages: write
+
+jobs:
+  delete:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Delete container tag
+        uses: rafalkk/remove-dockertag-action@v1
+        with:
+          image_name: ${{ inputs.package }}
+          tag_name: ${{ inputs.tag }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}

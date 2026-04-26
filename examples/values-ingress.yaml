@@ -1,0 +1,32 @@
+# Example values: cluster with ingress-nginx fronting the web UI, and a
+# few TCP ports exposed through ingress-nginx's TCP services map.
+
+systemIp: unifi.example.com
+
+ingress:
+  enabled: true
+  className: nginx
+  host: unifi.example.com
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+    cert-manager.io/cluster-issuer: letsencrypt
+  tls:
+    enabled: true
+    secretName: unifi-tls
+
+# ingress-nginx needs to be configured with these tcp/udp services in its
+# helm values:
+#
+#   tcp:
+#     8080: "unifi/unifi-unifi-os-server-communication:8080"
+#   udp:
+#     3478:  "unifi/unifi-unifi-os-server-stun:3478"
+#     10003: "unifi/unifi-unifi-os-server-discovery:10003"
+
+persistence:
+  data:
+    storageClass: longhorn
+    size: 30Gi
+  mongo:
+    storageClass: longhorn
+    size: 10Gi

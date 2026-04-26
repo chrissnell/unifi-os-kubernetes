@@ -1,0 +1,23 @@
+# Example values: bare-metal cluster with MetalLB providing a LoadBalancer IP.
+# All UOS ports are exposed via a single LoadBalancer per service.
+
+systemIp: unifi.example.com
+
+service:
+  type: LoadBalancer
+  loadBalancerIP: 192.0.2.10
+  externalTrafficPolicy: Local
+
+ports:
+  webui:        { enabled: true,  port: 443,   targetPort: 443,   protocol: TCP }
+  communication: { enabled: true, port: 8080,  targetPort: 8080,  protocol: TCP }
+  stun:         { enabled: true,  port: 3478,  targetPort: 3478,  protocol: UDP }
+  discovery:    { enabled: true,  port: 10003, targetPort: 10003, protocol: UDP }
+
+persistence:
+  data:
+    storageClass: longhorn
+    size: 30Gi
+  mongo:
+    storageClass: longhorn
+    size: 10Gi

@@ -1,0 +1,198 @@
+# Default values for the unifi-os-server chart.
+# UniFi OS Server is a monolithic appliance image that bundles MongoDB,
+# RabbitMQ, PostgreSQL, nginx, and the Java/Go services. It runs systemd as
+# PID 1 and requires a privileged container with cgroup access.
+
+image:
+  repository: ghcr.io/chrissnell/unifi-os-server
+  # If unset, Chart.appVersion is used.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+nameOverride: ""
+fullnameOverride: ""
+
+# Optional: pin the public hostname or IP UOS advertises to controllers and
+# devices. Maps to system.properties:system_ip.
+systemIp: ""
+
+# Optional: pin a stable UOS_UUID across reinstalls. Leave empty to let the
+# entrypoint generate one (it's persisted to the data PVC after first boot).
+uosUuid: ""
+
+# Optional Synology kernel/cgroup workarounds. Set to "synology" if running
+# on a Synology DSM host.
+hardwarePlatform: ""
+
+# Extra environment variables for the UOS container.
+extraEnv: {}
+
+resources:
+  requests:
+    cpu: 500m
+    memory: 2Gi
+  limits:
+    cpu: "4"
+    memory: 6Gi
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+priorityClassName: ""
+
+# Pod-level security: UOS runs systemd and bundled services as root; it
+# requires NET_ADMIN/NET_RAW and host cgroup access. Privileged mode is the
+# only reliable way to run it at present.
+podSecurityContext: {}
+securityContext:
+  privileged: true
+  capabilities:
+    add:
+      - NET_ADMIN
+      - NET_RAW
+
+# Data volumes. UOS state is split across several paths; we expose two PVCs
+# so the database can be sized, snapshotted, and restored independently of
+# everything else.
+persistence:
+  # Main UOS state (config, persistent, /data, /srv, unifi network app, logs,
+  # rabbitmq SSL).
+  data:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 20Gi
+    # Use an existing PVC (skips PVC creation).
+    existingClaim: ""
+    annotations: {}
+    # If set, an explicit PV is created with this NFS mount and bound to the
+    # PVC. Useful when you don't have a CSI provisioner.
+    nfs: {}
+    #  server: 10.50.0.110
+    #  path: /volume1/NFS/unifi-os/data
+
+  # Bundled MongoDB datadir (/var/lib/mongodb). Separate so you can put it on
+  # faster storage and snapshot it on its own schedule.
+  mongo:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 10Gi
+    existingClaim: ""
+    annotations: {}
+    nfs: {}
+    #  server: 10.50.0.110
+    #  path: /volume1/NFS/unifi-os/mongo
+
+  # Optional dedicated PVC for the Network app's autobackup directory
+  # (/var/lib/unifi/data/backup). When enabled, this overlays the main data
+  # PVC so autobackups land on storage you can snapshot / replicate / scrub
+  # independently. Leave disabled to keep autobackups inside the data PVC.
+  backups:
+    enabled: false
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 20Gi
+    existingClaim: ""
+    annotations: {}
+    nfs: {}
+    #  server: 10.50.0.110
+    #  path: /volume1/NFS/unifi-os/backups
+
+# Required tmpfs mounts. systemd needs writable /run, /tmp, journal, and
+# UniFi's tmp dir. Override sizeLimit if you have unusual workloads.
+tmpfs:
+  run:        { sizeLimit: "" }
+  runLock:    { sizeLimit: "" }
+  tmp:        { sizeLimit: "" }
+  journal:    { sizeLimit: "" }
+  unifiTmp:   { sizeLimit: "64Mi" }
+
+# Mount /sys/fs/cgroup from the host so systemd-in-container works. Required
+# unless you're on a host with cgroupsv2-only and have set it up specifically.
+cgroupHostPath:
+  enabled: true
+  path: /sys/fs/cgroup
+
+# Service definitions. Each entry mirrors a port that UOS listens on.
+# Keep `webui` enabled — that's the management UI. The rest are optional
+# depending on which UOS features you use.
+service:
+  type: ClusterIP
+  # When type is LoadBalancer, this IP is requested. Empty = let the cluster
+  # decide.
+  loadBalancerIP: ""
+  # Annotations applied to all created services.
+  annotations: {}
+  # External traffic policy for LoadBalancer/NodePort services. "Local"
+  # preserves source IP for STUN/discovery to work correctly.
+  externalTrafficPolicy: Local
+
+ports:
+  webui:            { enabled: true,  port: 443,   targetPort: 443,   protocol: TCP, description: "Web UI / API" }
+  communication:    { enabled: true,  port: 8080,  targetPort: 8080,  protocol: TCP, description: "Device communication / inform" }
+  stun:             { enabled: true,  port: 3478,  targetPort: 3478,  protocol: UDP, description: "STUN" }
+  discovery:        { enabled: true,  port: 10003, targetPort: 10003, protocol: UDP, description: "L2 device discovery" }
+  networkApp:       { enabled: false, port: 8443,  targetPort: 8443,  protocol: TCP, description: "Legacy Network app port" }
+  hotspotSecured:   { enabled: false, port: 8444,  targetPort: 8444,  protocol: TCP, description: "Hotspot HTTPS portal" }
+  hotspotRedirect0: { enabled: false, port: 8880,  targetPort: 8880,  protocol: TCP, description: "Hotspot HTTP redirect" }
+  hotspotRedirect1: { enabled: false, port: 8881,  targetPort: 8881,  protocol: TCP, description: "Hotspot HTTP redirect" }
+  hotspotRedirect2: { enabled: false, port: 8882,  targetPort: 8882,  protocol: TCP, description: "Hotspot HTTP redirect" }
+  rtp:              { enabled: false, port: 5005,  targetPort: 5005,  protocol: TCP, description: "RTP voice" }
+  idHub:            { enabled: false, port: 9543,  targetPort: 9543,  protocol: TCP, description: "Identity Hub" }
+  mobileSpeedtest:  { enabled: false, port: 6789,  targetPort: 6789,  protocol: TCP, description: "Mobile speedtest" }
+  siteSupervisor:   { enabled: false, port: 11084, targetPort: 11084, protocol: TCP, description: "Site Supervisor" }
+  aqmps:            { enabled: false, port: 5671,  targetPort: 5671,  protocol: TCP, description: "AMQPS" }
+  syslog:           { enabled: false, port: 5514,  targetPort: 5514,  protocol: UDP, description: "Syslog" }
+
+# Single ingress for the web UI. UOS terminates TLS itself, so the ingress
+# must speak HTTPS to the backend.
+ingress:
+  enabled: false
+  className: nginx
+  host: unifi.example.com
+  annotations:
+    nginx.ingress.kubernetes.io/backend-protocol: HTTPS
+  tls:
+    enabled: true
+    secretName: ""
+  path: /
+  pathType: Prefix
+
+# Single-replica only — this is a stateful appliance.
+replicaCount: 1
+strategy:
+  type: Recreate
+
+# Liveness probe hits the bundled nginx /api/ping. Set initialDelaySeconds
+# generously; full systemd boot of UOS can take several minutes on first run.
+probes:
+  liveness:
+    enabled: true
+    httpGet:
+      path: /api/ping
+      port: 80
+    initialDelaySeconds: 180
+    periodSeconds: 60
+    timeoutSeconds: 10
+    failureThreshold: 5
+  readiness:
+    enabled: true
+    httpGet:
+      path: /api/ping
+      port: 80
+    initialDelaySeconds: 60
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 10
+
+# Pod & deployment annotations / labels.
+podAnnotations: {}
+podLabels: {}
+
+# Add the host IP as `host.docker.internal` in /etc/hosts (matches lemker
+# reference manifest behaviour; UOS uses this for some inter-service calls).
+hostDockerInternal:
+  enabled: true
