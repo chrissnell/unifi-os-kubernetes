@@ -27,6 +27,7 @@ spec:
   {{- end }}
   selector:
     {{- $sel | nindent 4 }}
+    app.kubernetes.io/component: server
   ports:
     - name: {{ $name | lower | trunc 15 }}
       port: {{ $p.port }}
