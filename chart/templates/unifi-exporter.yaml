@@ -116,15 +116,15 @@ spec:
             - name: UP_UNIFI_DEFAULT_HASH_PII
               value: {{ default false $cfg.hashPii | quote }}
             {{- if $useApiKey }}
-            # API key auth (UniFi OS 4+): unpoller treats UP_UNIFI_DEFAULT_PASS
-            # as the API key when UP_UNIFI_DEFAULT_USER is unset.
-            - name: UP_UNIFI_DEFAULT_PASS
+            # API-key auth (UniFi OS 4+): unpoller sends X-API-Key when
+            # UP_UNIFI_DEFAULT_API_KEY is set and skips user/pass login.
+            - name: UP_UNIFI_DEFAULT_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ $secretName }}
                   key: {{ $apiKeyKey }}
             {{- else if .Values.unifiExporter.existingSecret.name }}
-              {{- /* user-provided secret: prefer api-key if present, else password */}}
+              {{- /* user-provided secret: prefer api-key path, else username+password */}}
               {{- if $cfg.username }}
             - name: UP_UNIFI_DEFAULT_USER
               value: {{ $cfg.username | quote }}
@@ -134,7 +134,7 @@ spec:
                   name: {{ $secretName }}
                   key: {{ $passwordKey }}
               {{- else }}
-            - name: UP_UNIFI_DEFAULT_PASS
+            - name: UP_UNIFI_DEFAULT_API_KEY
               valueFrom:
                 secretKeyRef:
                   name: {{ $secretName }}
