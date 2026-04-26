@@ -59,7 +59,15 @@ ensure_dir() {
 ensure_dir /var/log/nginx     nginx:nginx     755
 ensure_dir /var/log/mongodb   mongodb:mongodb 755
 ensure_dir /var/log/rabbitmq  rabbitmq:rabbitmq 755
+
+# /var/lib/mongodb needs to be owned by mongodb AND not world-writable.
+# When the path comes from a freshly-provisioned NFS PV the default mode is
+# often 0777, which mongod refuses (and on some NFS servers the underlying
+# uid mapping then refuses subsequent lock-file stats). Force-chown and
+# chmod to 0770 so the bundled mongod boots cleanly.
+mkdir -p /var/lib/mongodb
 chown -R mongodb:mongodb /var/lib/mongodb || true
+chmod 0770 /var/lib/mongodb || true
 
 # 6. Synology-specific systemd unit overrides (DSM cgroup quirks).
 SYS_VENDOR="/sys/class/dmi/id/sys_vendor"
