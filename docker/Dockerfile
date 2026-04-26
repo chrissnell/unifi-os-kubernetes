@@ -63,12 +63,17 @@ RUN set -eux; \
 RUN set -eux; \
     printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d; \
     chmod +x /usr/sbin/policy-rc.d; \
-    HOOK=/etc/dpkg/dpkg.cfg.d/015-ubnt-dpkg-status; \
-    cp "$HOOK" "$HOOK.original"; \
-    sed -i 's|/usr/bin/systemd-cat -t [a-z-]* ||g' "$HOOK"; \
+    for HOOK in /etc/dpkg/dpkg.cfg.d/015-ubnt-dpkg-status \
+                /etc/dpkg/dpkg.cfg.d/020-ubnt-dpkg-cache; do \
+      cp "$HOOK" "$HOOK.original"; \
+      sed -i 's|/usr/bin/systemd-cat -t [a-z-]* ||g' "$HOOK"; \
+    done; \
     SKIP_DPKG_CACHE=yes \
       /usr/bin/uos runnable install --version "${NETWORK_APP_VERSION}" unifi; \
-    mv "$HOOK.original" "$HOOK"; \
+    for HOOK in /etc/dpkg/dpkg.cfg.d/015-ubnt-dpkg-status \
+                /etc/dpkg/dpkg.cfg.d/020-ubnt-dpkg-cache; do \
+      mv "$HOOK.original" "$HOOK"; \
+    done; \
     rm /usr/sbin/policy-rc.d; \
     rm -rf /var/lib/apt/lists/*
 
