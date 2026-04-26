@@ -135,6 +135,9 @@ service:
   externalTrafficPolicy: Cluster
 
 ports:
+  # Each entry may set `annotations: { ... }` to add per-service annotations
+  # (merged on top of `service.annotations` above). Useful for example to set
+  # external-mdns hostnames on just the webui service.
   webui:            { enabled: true,  port: 443,   targetPort: 443,   protocol: TCP, description: "Web UI / API" }
   communication:    { enabled: true,  port: 8080,  targetPort: 8080,  protocol: TCP, description: "Device communication / inform" }
   stun:             { enabled: true,  port: 3478,  targetPort: 3478,  protocol: UDP, description: "STUN" }

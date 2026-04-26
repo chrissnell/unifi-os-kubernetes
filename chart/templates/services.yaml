@@ -12,9 +12,10 @@ metadata:
   labels:
     {{- $labels | nindent 4 }}
     unifi-os-server.io/port: {{ $name | quote }}
-  {{- with $svc.annotations }}
+  {{- $merged := merge (default (dict) $p.annotations) (default (dict) $svc.annotations) }}
+  {{- if $merged }}
   annotations:
-    {{- toYaml . | nindent 4 }}
+    {{- toYaml $merged | nindent 4 }}
   {{- end }}
 spec:
   type: {{ $svc.type }}
