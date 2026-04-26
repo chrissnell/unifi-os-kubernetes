@@ -8,6 +8,12 @@ name: Check for new UniFi OS Server release
 
 on:
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Run extract+build+PR even if pinned version matches upstream"
+        required: false
+        default: "false"
+        type: string
   schedule:
     - cron: "0 6 * * *"
 
@@ -65,8 +71,13 @@ jobs:
 
       - name: Compare against pinned Dockerfile version
         id: release
+        env:
+          FORCE: ${{ inputs.force }}
         run: |
-          if grep -q "UOS_SERVER_VERSION=\"${UOS_VERSION}\"" docker/Dockerfile; then
+          if [ "$FORCE" = "true" ]; then
+            echo "Force flag set, running pipeline regardless of version match"
+            echo "released=false" >> "$GITHUB_OUTPUT"
+          elif grep -q "UOS_SERVER_VERSION=\"${UOS_VERSION}\"" docker/Dockerfile; then
             echo "UOS_SERVER_VERSION ${UOS_VERSION} already pinned, nothing to do"
             echo "released=true" >> "$GITHUB_OUTPUT"
           else
@@ -107,10 +118,20 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Bump UOSSERVER_TAG and UOS_SERVER_VERSION in Dockerfile
+      - name: Bump Dockerfile and Chart for new UOS version
         run: |
           sed -i "s|^ARG UOSSERVER_TAG=.*|ARG UOSSERVER_TAG=${PODMAN_IMAGE_TAG}-multiarch|" docker/Dockerfile
           sed -i "s|^ENV UOS_SERVER_VERSION=.*|ENV UOS_SERVER_VERSION=\"${UOS_VERSION}\"|" docker/Dockerfile
+          sed -i "s|^appVersion:.*|appVersion: \"${UOS_VERSION}\"|" chart/Chart.yaml
+          # Patch-bump the chart version so chart-releaser publishes a new release.
+          CHART_VERSION=$(awk '/^version:/ {print $2}' chart/Chart.yaml)
+          MAJOR=$(echo "$CHART_VERSION" | cut -d. -f1)
+          MINOR=$(echo "$CHART_VERSION" | cut -d. -f2)
+          PATCH=$(echo "$CHART_VERSION" | cut -d. -f3)
+          NEW_PATCH=$((PATCH + 1))
+          NEW_VERSION="${MAJOR}.${MINOR}.${NEW_PATCH}"
+          sed -i "s|^version: .*|version: ${NEW_VERSION}|" chart/Chart.yaml
+          echo "Chart bumped from ${CHART_VERSION} to ${NEW_VERSION}, appVersion ${UOS_VERSION}"
 
       - name: Open pull request
         uses: peter-evans/create-pull-request@v6
@@ -125,5 +146,7 @@ jobs:
 
             * `uosserver` base → `${{ env.PODMAN_IMAGE_TAG }}-multiarch`
             * `UOS_SERVER_VERSION` → `${{ env.UOS_VERSION }}`
+            * Chart `appVersion` → `${{ env.UOS_VERSION }}`
+            * Chart `version` patch-bumped (chart-releaser will publish on merge)
 
             Source: https://fw-update.ubnt.com/api/firmware-latest (release channel).

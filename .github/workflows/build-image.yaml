@@ -42,6 +42,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Read UOS version from Dockerfile
+        id: uosver
+        run: |
+          UOS_VERSION=$(awk -F'"' '/^ENV UOS_SERVER_VERSION=/ {print $2}' docker/Dockerfile)
+          if [ -z "$UOS_VERSION" ]; then
+            echo "Could not parse UOS_SERVER_VERSION from docker/Dockerfile" >&2
+            exit 1
+          fi
+          UOS_MAJOR_MINOR=$(echo "$UOS_VERSION" | cut -d. -f1-2)
+          UOS_MAJOR=$(echo "$UOS_VERSION" | cut -d. -f1)
+          {
+            echo "uos_version=$UOS_VERSION"
+            echo "uos_major_minor=$UOS_MAJOR_MINOR"
+            echo "uos_major=$UOS_MAJOR"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Extract metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -53,8 +69,12 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=sha,prefix=sha-
+            type=raw,value=${{ steps.uosver.outputs.uos_version }},enable={{ is_default_branch }}
+            type=raw,value=${{ steps.uosver.outputs.uos_major_minor }},enable={{ is_default_branch }}
+            type=raw,value=${{ steps.uosver.outputs.uos_major }},enable={{ is_default_branch }}
+            type=raw,value=latest,enable={{ is_default_branch }}
           flavor: |
-            latest=auto
+            latest=false
 
       - name: Build and push image
         uses: docker/build-push-action@v6
