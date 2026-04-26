@@ -64,3 +64,19 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- printf "%s-backups" (include "unifi-os-server.fullname" .) -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+TLS secret name. Resolution order:
+  1. ingress.tls.secretName (explicit override)
+  2. certManager.secretName (explicit override when cert-manager is enabled)
+  3. <fullname>-tls (chart default; the Certificate template writes here)
+*/}}
+{{- define "unifi-os-server.tlsSecretName" -}}
+{{- if .Values.ingress.tls.secretName -}}
+{{- .Values.ingress.tls.secretName -}}
+{{- else if and .Values.certManager.enabled .Values.certManager.secretName -}}
+{{- .Values.certManager.secretName -}}
+{{- else -}}
+{{- printf "%s-tls" (include "unifi-os-server.fullname" .) -}}
+{{- end -}}
+{{- end -}}

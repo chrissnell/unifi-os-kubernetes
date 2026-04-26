@@ -94,7 +94,35 @@ Type=simple
 EOF
 fi
 
-# 7. Optional: pin system_ip in unifi network properties.
+# 7. Redirect Go-service logs to stdout so `kubectl logs` / docker logs see them.
+# These services read their settings from /data/<svc>/ws/config.props and default
+# to logging into per-service files inside the container, which are invisible to
+# standard log aggregation. We append the log-redirect properties idempotently:
+# if the file already has `log.std=true` we leave it alone, so user customizations
+# survive container restarts.
+ensure_log_redirect() {
+    local cfg="$1"
+    local dir
+    dir="$(dirname "$cfg")"
+    mkdir -p "$dir"
+    if [ -f "$cfg" ] && grep -qE '^[[:space:]]*log\.std[[:space:]]*=[[:space:]]*true' "$cfg"; then
+        return 0
+    fi
+    {
+        echo ""
+        echo "# Added by uos-entrypoint: redirect logs to stdout for container log aggregation"
+        echo "log.std = true"
+        echo "log.redirect_std_output = false"
+        echo "log.std_to_file.enable = false"
+    } >> "$cfg"
+}
+
+for svc in ulp-go ucs-agent unifi-directory uid-agent unifi-credential-server \
+           ucs-user-assets unifi-identity-update; do
+    ensure_log_redirect "$DATA_DIR/$svc/ws/config.props"
+done
+
+# 8. Optional: pin system_ip in unifi network properties.
 UNIFI_SYSTEM_PROPERTIES="/var/lib/unifi/system.properties"
 if [ -n "${UOS_SYSTEM_IP:-}" ]; then
     echo "Setting system_ip=$UOS_SYSTEM_IP in $UNIFI_SYSTEM_PROPERTIES"

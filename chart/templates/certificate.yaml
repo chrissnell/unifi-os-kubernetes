@@ -1,0 +1,51 @@
+{{- if .Values.certManager.enabled }}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "unifi-os-server.fullname" . }}-tls
+  labels:
+    {{- include "unifi-os-server.labels" . | nindent 4 }}
+  {{- with .Values.certManager.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  secretName: {{ include "unifi-os-server.tlsSecretName" . | quote }}
+  {{- with .Values.certManager.duration }}
+  duration: {{ . }}
+  {{- end }}
+  {{- with .Values.certManager.renewBefore }}
+  renewBefore: {{ . }}
+  {{- end }}
+  {{- with .Values.certManager.commonName }}
+  commonName: {{ . | quote }}
+  {{- end }}
+  {{- with .Values.certManager.dnsNames }}
+  dnsNames:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.certManager.ipAddresses }}
+  ipAddresses:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.certManager.subject }}
+  subject:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.certManager.privateKey }}
+  privateKey:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.certManager.usages }}
+  usages:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  issuerRef:
+    {{- with .Values.certManager.issuerRef.kind }}
+    kind: {{ . }}
+    {{- end }}
+    {{- with .Values.certManager.issuerRef.group }}
+    group: {{ . }}
+    {{- end }}
+    name: {{ required "certManager.issuerRef.name is required when certManager.enabled is true" .Values.certManager.issuerRef.name }}
+{{- end }}

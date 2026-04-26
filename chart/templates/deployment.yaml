@@ -43,10 +43,6 @@ spec:
             {{- toYaml . | nindent 12 }}
           {{- end }}
           env:
-            - name: HOST_IP
-              valueFrom:
-                fieldRef:
-                  fieldPath: status.hostIP
             {{- if .Values.systemIp }}
             - name: UOS_SYSTEM_IP
               value: {{ .Values.systemIp | quote }}
@@ -63,15 +59,6 @@ spec:
             - name: {{ $k }}
               value: {{ $v | quote }}
             {{- end }}
-          {{- if .Values.hostDockerInternal.enabled }}
-          lifecycle:
-            postStart:
-              exec:
-                command:
-                  - /bin/bash
-                  - -c
-                  - 'echo "$HOST_IP host.docker.internal" >> /etc/hosts'
-          {{- end }}
           ports:
             {{- range $name, $p := .Values.ports }}
             {{- if $p.enabled }}

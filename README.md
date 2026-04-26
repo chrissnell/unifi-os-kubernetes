@@ -156,6 +156,36 @@ The chart wires all of this for you.
 
 Toggle each via `ports.<name>.enabled` in values.
 
+## TLS via cert-manager
+
+If you run cert-manager in your cluster, the chart can issue and rotate the
+ingress TLS certificate for you:
+
+```yaml
+ingress:
+  enabled: true
+  host: unifi.example.com
+
+certManager:
+  enabled: true
+  issuerRef:
+    name: letsencrypt-prod         # ClusterIssuer name
+    kind: ClusterIssuer
+  dnsNames:
+    - unifi.example.com
+```
+
+The chart creates a `Certificate` whose secret feeds the ingress automatically.
+This controls the secret in front of the ingress only — UniFi's bundled nginx
+keeps managing its own internal cert for device-facing TLS.
+
+## Prometheus metrics
+
+The chart ships an opt-in [unpoller](https://github.com/unpoller/unpoller)
+exporter (`unifiExporter.enabled: true`) that scrapes UOS and exposes metrics
+on `:9130`. See `chart/values.yaml` for auth options and the optional
+`ServiceMonitor`.
+
 ## Restoring a legacy controller `.unf` backup
 
 UOS's bundled Network app accepts `.unf` autobackups produced by older
@@ -273,6 +303,15 @@ kubectl rollout restart deploy/<release>
 
 Issues and PRs welcome. Please don't open issues for UOS bugs themselves —
 those should go to Ubiquiti.
+
+## Credits
+
+Several improvements in this repo (the discovery-shim approach for silencing
+`uos-discovery-client` polling, `Restart=no` drop-ins for the stub
+`uos-discovery-client` / `uos-agent` services, the bundled unpoller exporter,
+and a few other touches) were inspired by prior work in
+[ConnorsApps/unifi-os-helm](https://github.com/ConnorsApps/unifi-os-helm).
+Thanks to [@ConnorsApps](https://github.com/ConnorsApps) for the ideas.
 
 ## License
 
