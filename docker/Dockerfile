@@ -52,11 +52,23 @@ RUN set -eux; \
 # - SKIP_DPKG_CACHE=yes suppresses the ubnt-dpkg-cache post-invoke hook
 #   so we don't bake a /persistent/dpkg cache into the image (it would
 #   be shadowed by the data PVC at runtime anyway).
+# - The dpkg.cfg.d hook config wraps the Ubiquiti pre/post-invoke
+#   scripts in `systemd-cat -t TAG …`. systemd-cat fails without a
+#   running journald, which makes dpkg abort with
+#     "Failed to create stream fd: No such file or directory"
+#   uos catches that as IO error and the bake aborts. Strip the
+#   wrapper so the underlying scripts run directly during build, then
+#   restore the original config so journald-driven logging works at
+#   runtime.
 RUN set -eux; \
     printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d; \
     chmod +x /usr/sbin/policy-rc.d; \
+    HOOK=/etc/dpkg/dpkg.cfg.d/015-ubnt-dpkg-status; \
+    cp "$HOOK" "$HOOK.original"; \
+    sed -i 's|/usr/bin/systemd-cat -t [a-z-]* ||g' "$HOOK"; \
     SKIP_DPKG_CACHE=yes \
       /usr/bin/uos runnable install --version "${NETWORK_APP_VERSION}" unifi; \
+    mv "$HOOK.original" "$HOOK"; \
     rm /usr/sbin/policy-rc.d; \
     rm -rf /var/lib/apt/lists/*
 
