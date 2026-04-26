@@ -27,6 +27,21 @@ ENV UOS_SERVER_VERSION="5.0.6"
 ARG NETWORK_APP_VERSION=10.3.55-34128-1
 ENV NETWORK_APP_VERSION=${NETWORK_APP_VERSION}
 
+# `uos runnable install` reads /usr/lib/version (firmware version file).
+# Ubiquiti's installer writes that file on the host, not inside the image —
+# entrypoint.sh recreates it at runtime, but we also need it at build time
+# for the bake step below. Match the entrypoint's format. Same for
+# /usr/lib/platform if it's missing in upstream.
+RUN set -eux; \
+    echo "UOSSERVER.0000000.${UOS_SERVER_VERSION}.0000000.000000.0000" > /usr/lib/version; \
+    if [ ! -s /usr/lib/platform ]; then \
+        case "$(dpkg --print-architecture)" in \
+            amd64) echo linux-x64 > /usr/lib/platform ;; \
+            arm64) echo arm64 > /usr/lib/platform ;; \
+            *)     echo "linux-$(dpkg --print-architecture)" > /usr/lib/platform ;; \
+        esac; \
+    fi
+
 # Bake the Network app into the image so first boot doesn't show the
 # "Install Network App" prompt. Uses Ubiquiti's own `uos` CLI so the
 # package, signing, and dependency resolution match exactly what UOS
