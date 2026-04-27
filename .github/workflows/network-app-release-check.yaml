@@ -43,13 +43,15 @@ jobs:
         run: |
           UOSSERVER_TAG=$(awk -F= '/^ARG UOSSERVER_TAG=/ {print $2}' docker/Dockerfile)
           NETWORK_APP_VERSION=$(awk -F= '/^ARG NETWORK_APP_VERSION=/ {print $2}' docker/Dockerfile)
-          if [ -z "$UOSSERVER_TAG" ] || [ -z "$NETWORK_APP_VERSION" ]; then
-            echo "Could not parse UOSSERVER_TAG or NETWORK_APP_VERSION from docker/Dockerfile" >&2
+          UOS_SERVER_VERSION=$(awk -F'"' '/^ENV UOS_SERVER_VERSION=/ {print $2}' docker/Dockerfile)
+          if [ -z "$UOSSERVER_TAG" ] || [ -z "$NETWORK_APP_VERSION" ] || [ -z "$UOS_SERVER_VERSION" ]; then
+            echo "Could not parse UOSSERVER_TAG, NETWORK_APP_VERSION, or UOS_SERVER_VERSION from docker/Dockerfile" >&2
             exit 1
           fi
           {
             echo "uosserver_tag=$UOSSERVER_TAG"
             echo "network_app_version=$NETWORK_APP_VERSION"
+            echo "uos_server_version=$UOS_SERVER_VERSION"
           } | tee -a "$GITHUB_OUTPUT"
 
       - name: Login to GHCR
@@ -63,17 +65,29 @@ jobs:
         id: discover
         env:
           UOSSERVER_TAG: ${{ steps.pinned.outputs.uosserver_tag }}
+          UOS_SERVER_VERSION: ${{ steps.pinned.outputs.uos_server_version }}
         run: |
           # `uos runnable latest-versions unifi` queries Ubiquiti's FUS and
           # returns the Network app release that's paired with this UOS
           # Server version. Running it inside the uosserver base guarantees
           # the same answer the live container would give.
+          #
+          # uos reads /usr/lib/version (firmware version) and /usr/lib/platform
+          # to identify itself in the FUS query; both are populated by systemd
+          # and the PVC mounts at runtime but absent in the bare base image,
+          # so a vanilla `docker run uos …` exits "Firmware version file
+          # missing". Recreate the minimum set the same way docker/Dockerfile
+          # does for its bake step.
           IMAGE="${REGISTRY}/${UOSSERVER_IMAGE}:${UOSSERVER_TAG}"
           docker pull --platform linux/amd64 "$IMAGE"
           version=$(docker run --rm --platform linux/amd64 \
-            --entrypoint /usr/bin/uos "$IMAGE" \
-            runnable latest-versions unifi \
-            | jq -r '.release.version // empty')
+            --entrypoint /bin/sh \
+            -e UOS_SERVER_VERSION \
+            "$IMAGE" -c '
+              echo "UOSSERVER.0000000.${UOS_SERVER_VERSION}.0000000.000000.0000" > /usr/lib/version
+              [ -s /usr/lib/platform ] || echo linux-x64 > /usr/lib/platform
+              exec /usr/bin/uos runnable latest-versions unifi
+            ' | jq -r '.release.version // empty')
           if [ -z "$version" ]; then
             echo "FUS returned no release for product=unifi on ${IMAGE}" >&2
             exit 1
