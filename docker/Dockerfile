@@ -24,7 +24,7 @@ ENV UOS_SERVER_VERSION="5.0.6"
 # Network application version. Bumped automatically by the
 # network-app-release-check workflow whenever Ubiquiti's FUS publishes a
 # newer release-channel `unifi` paired with this UOS_SERVER_VERSION.
-ARG NETWORK_APP_VERSION=10.3.55-34128-1
+ARG NETWORK_APP_VERSION=10.3.58-34147-1
 ENV NETWORK_APP_VERSION=${NETWORK_APP_VERSION}
 
 # `uos runnable install` reads /usr/lib/version (firmware version file)
