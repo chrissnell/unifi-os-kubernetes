@@ -89,12 +89,40 @@ jobs:
           COMBINED=$(jq -r '((.Entrypoint // []) + (.Cmd // [])) | join(" ")' /tmp/upstream-config.json)
           case "$COMBINED" in
             *"/sbin/init"*|*" init"*|"init"|"/sbin/init")
-              echo "Upstream entrypoint matches expected systemd init invocation."
+              echo "Upstream boots /sbin/init directly."
               ;;
             *)
-              echo "::error::Upstream entrypoint changed — expected /sbin/init, got: $COMBINED"
-              echo "::error::Update docker/entrypoint.sh and re-run."
-              exit 1
+              # Upstream boots through a wrapper script rather than /sbin/init
+              # directly. Follow it one level: extract the script, record it
+              # for audit, and confirm it still execs /sbin/init.
+              WRAPPER=$(jq -r '(.Cmd // [])[-1] // empty' /tmp/upstream-config.json)
+              case "$WRAPPER" in
+                /*) ;;
+                *)
+                  echo "::error::Upstream entrypoint changed and is not a wrapper script path: $COMBINED"
+                  echo "::error::Update docker/entrypoint.sh and re-run."
+                  exit 1
+                  ;;
+              esac
+              echo "Upstream boots via wrapper: $WRAPPER — extracting to verify it execs /sbin/init"
+              CID=$(podman create "$PODMAN_IMAGE_ID")
+              podman cp "$CID:$WRAPPER" /tmp/upstream-entrypoint.sh
+              podman rm "$CID" >/dev/null
+              {
+                echo ""
+                echo "### Upstream wrapper entrypoint (\`$WRAPPER\`)"
+                echo ""
+                echo "\`\`\`bash"
+                cat /tmp/upstream-entrypoint.sh
+                echo "\`\`\`"
+              } >> "$GITHUB_STEP_SUMMARY"
+              if grep -q '/sbin/init' /tmp/upstream-entrypoint.sh; then
+                echo "Wrapper hands off to /sbin/init — boot model intact."
+              else
+                echo "::error::Upstream wrapper $WRAPPER no longer execs /sbin/init."
+                echo "::error::Boot model changed — re-review docker/entrypoint.sh and re-run."
+                exit 1
+              fi
               ;;
           esac
 

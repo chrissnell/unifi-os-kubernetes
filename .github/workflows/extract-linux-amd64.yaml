@@ -67,10 +67,16 @@ jobs:
 
       - name: Capture upstream OCI config + drift detection
         # The application Dockerfile inherits Entrypoint/Cmd/Env/WorkingDir
-        # from this image via FROM. If Ubiquiti changes the entrypoint away
-        # from /sbin/init, our docker/entrypoint.sh's `exec /sbin/init` will
-        # silently break. Dump the upstream config to the workflow summary
-        # for auditability and fail loud on drift.
+        # from this image via FROM, then overrides ENTRYPOINT with our own
+        # docker/entrypoint.sh (which ends in `exec /sbin/init`). This check
+        # is a canary: it confirms upstream still ultimately boots systemd so
+        # our entrypoint's assumptions hold. As of UOS Server 5.0.x upstream
+        # no longer sets Cmd=/sbin/init directly — it boots through a wrapper
+        # (Cmd=/root/uos-entrypoint.sh) that execs /sbin/init. A Cmd-level
+        # check is blind to changes inside that wrapper, so when a wrapper is
+        # detected we extract it, record it in the run summary, and verify it
+        # still hands off to /sbin/init. Dump the upstream config too, and
+        # fail loud on real drift.
         run: |
           set -euo pipefail
           PODMAN_IMAGE_ID=$(podman images uosserver --noheading | awk 'NR==1{print $3}')
@@ -98,12 +104,40 @@ jobs:
           COMBINED=$(jq -r '((.Entrypoint // []) + (.Cmd // [])) | join(" ")' /tmp/upstream-config.json)
           case "$COMBINED" in
             *"/sbin/init"*|*" init"*|"init"|"/sbin/init")
-              echo "Upstream entrypoint matches expected systemd init invocation."
+              echo "Upstream boots /sbin/init directly."
               ;;
             *)
-              echo "::error::Upstream entrypoint changed — expected /sbin/init, got: $COMBINED"
-              echo "::error::Update docker/entrypoint.sh and re-run."
-              exit 1
+              # Upstream boots through a wrapper script rather than /sbin/init
+              # directly. Follow it one level: extract the script, record it
+              # for audit, and confirm it still execs /sbin/init.
+              WRAPPER=$(jq -r '(.Cmd // [])[-1] // empty' /tmp/upstream-config.json)
+              case "$WRAPPER" in
+                /*) ;;
+                *)
+                  echo "::error::Upstream entrypoint changed and is not a wrapper script path: $COMBINED"
+                  echo "::error::Update docker/entrypoint.sh and re-run."
+                  exit 1
+                  ;;
+              esac
+              echo "Upstream boots via wrapper: $WRAPPER — extracting to verify it execs /sbin/init"
+              CID=$(podman create "$PODMAN_IMAGE_ID")
+              podman cp "$CID:$WRAPPER" /tmp/upstream-entrypoint.sh
+              podman rm "$CID" >/dev/null
+              {
+                echo ""
+                echo "### Upstream wrapper entrypoint (\`$WRAPPER\`)"
+                echo ""
+                echo "\`\`\`bash"
+                cat /tmp/upstream-entrypoint.sh
+                echo "\`\`\`"
+              } >> "$GITHUB_STEP_SUMMARY"
+              if grep -q '/sbin/init' /tmp/upstream-entrypoint.sh; then
+                echo "Wrapper hands off to /sbin/init — boot model intact."
+              else
+                echo "::error::Upstream wrapper $WRAPPER no longer execs /sbin/init."
+                echo "::error::Boot model changed — re-review docker/entrypoint.sh and re-run."
+                exit 1
+              fi
               ;;
           esac
 
