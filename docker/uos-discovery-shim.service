@@ -2,10 +2,17 @@
 Description=UniFi OS discovery-client shim (replaces stub uos-discovery-client)
 After=network.target
 Before=unifi-core.service
+# Cap restarts so a persistently-failing shim can never storm the journal
+# (node cannot be located and even the launcher fails, shim.js keeps
+# crashing, ...). The launcher already exits 0 when node is simply absent.
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/node /usr/local/lib/uos-discovery-shim/shim.js
+# Launcher resolves the node binary at runtime; UOS does not guarantee it at
+# /usr/bin/node. See discovery-shim-launch.sh (GitHub #10).
+ExecStart=/usr/local/lib/uos-discovery-shim/launch.sh
 Restart=on-failure
 RestartSec=2s
 StandardOutput=journal

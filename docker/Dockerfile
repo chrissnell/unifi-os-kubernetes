@@ -101,8 +101,10 @@ RUN mkdir -p \
 # "ECONNREFUSED 127.0.0.1:11002" / "Failed to fetch network interfaces"
 # every few seconds. See discovery-shim.js for protocol details.
 COPY discovery-shim.js /usr/local/lib/uos-discovery-shim/shim.js
+COPY discovery-shim-launch.sh /usr/local/lib/uos-discovery-shim/launch.sh
 COPY uos-discovery-shim.service /etc/systemd/system/uos-discovery-shim.service
-RUN ln -sf /etc/systemd/system/uos-discovery-shim.service \
+RUN chmod +x /usr/local/lib/uos-discovery-shim/launch.sh \
+    && ln -sf /etc/systemd/system/uos-discovery-shim.service \
         /etc/systemd/system/multi-user.target.wants/uos-discovery-shim.service
 
 # systemd inside the container expects SIGRTMIN+3 to perform a clean shutdown.
