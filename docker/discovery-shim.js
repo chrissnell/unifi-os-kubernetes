@@ -14,8 +14,10 @@
 //                                              ZodRecord schema)
 //   HEAD /healthz    → 200
 //
-// Runs under systemd as uos-discovery-shim.service. Uses only Node
-// standard library — Node is already in the image (unifi-core is Node).
+// Runs under systemd as uos-discovery-shim.service, started by
+// discovery-shim-launch.sh which locates the Node runtime (UOS ships one
+// because unifi-core is Node, but not always at /usr/bin/node). Uses only
+// the Node standard library.
 
 const http = require("http");
 const os = require("os");

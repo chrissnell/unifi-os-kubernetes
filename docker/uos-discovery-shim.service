@@ -2,10 +2,16 @@
 Description=UniFi OS discovery-client shim (replaces stub uos-discovery-client)
 After=network.target
 Before=unifi-core.service
+# Backstop against a persistently crashing shim.js; the missing-node case
+# already exits 0 in the launcher and never reaches this limit.
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/node /usr/local/lib/uos-discovery-shim/shim.js
+# Launcher resolves the node binary at runtime; UOS does not guarantee it at
+# /usr/bin/node. See discovery-shim-launch.sh (GitHub #10).
+ExecStart=/usr/local/lib/uos-discovery-shim/launch.sh
 Restart=on-failure
 RestartSec=2s
 StandardOutput=journal
