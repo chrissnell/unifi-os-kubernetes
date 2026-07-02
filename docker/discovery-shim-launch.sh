@@ -15,6 +15,8 @@ set -eu
 
 SHIM=/usr/local/lib/uos-discovery-shim/shim.js
 
+# PATH resolution (`node`) and DISCOVERY_SHIM_NODE do the real work; the
+# unifi-core paths below are best-effort fallbacks, not confirmed locations.
 for candidate in \
     "${DISCOVERY_SHIM_NODE:-}" \
     node \
