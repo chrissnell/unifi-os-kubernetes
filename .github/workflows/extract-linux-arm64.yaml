@@ -41,6 +41,22 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           df -h /
 
+      - name: Ensure the installer can find podman
+        run: |
+          set -euo pipefail
+          if [ -x /usr/bin/podman ]; then
+            echo "/usr/bin/podman already present"
+          else
+            podman_path=$(command -v podman || true)
+            if [ -z "$podman_path" ]; then
+              echo "::error::podman is not installed on this runner" >&2
+              exit 1
+            fi
+            echo "Linking $podman_path to /usr/bin/podman"
+            sudo ln -sf "$podman_path" /usr/bin/podman
+          fi
+          /usr/bin/podman --version
+
       - name: Run UniFi OS Server installer
         run: |
           mkdir -p /home/runner/.config/containers
@@ -50,6 +66,10 @@ jobs:
           curl -fsSL -o unifi-os-server "${{ inputs.UOS_DOWNLOAD }}"
           sudo chmod +x unifi-os-server
           echo "y" | sudo ./unifi-os-server || true
+          if ! sudo test -d /home/uosserver/.local/share/containers/storage/overlay; then
+            echo "::error::Installer left no podman image at /home/uosserver/.local/share/containers/storage — see the installer output above." >&2
+            exit 1
+          fi
 
       - name: Move uosserver image into runner podman storage
         run: |
