@@ -23,9 +23,11 @@ if [ ! -f "$DATA_DIR/uos_uuid" ]; then
     fi
 fi
 
-# 2. Write the UOS version string the bundled services expect.
+# 2. Write the UOS identity files the bundled services expect.
 echo "Setting UOS_SERVER_VERSION=${UOS_SERVER_VERSION}"
 echo "UOSSERVER.0000000.${UOS_SERVER_VERSION}.0000000.000000.0000" > /usr/lib/version
+echo "UOSSERVER" > /usr/lib/app_model
+echo "UniFi OS Server" > /usr/lib/product_name
 
 # 3. Map dpkg arch to UOS firmware platform.
 ARCH="$(dpkg --print-architecture)"
