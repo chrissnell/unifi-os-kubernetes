@@ -41,6 +41,16 @@ jobs:
           sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
           df -h /
 
+      - name: Install podman
+        # GitHub-hosted ubuntu-24.04-arm images no longer ship podman
+        # preinstalled, and the UOS installer hard-checks /usr/bin/podman
+        # before proceeding.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y podman
+          command -v podman
+          podman --version
+
       - name: Run UniFi OS Server installer
         run: |
           mkdir -p /home/runner/.config/containers
