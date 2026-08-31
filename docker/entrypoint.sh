@@ -24,6 +24,13 @@ if [ ! -f "$DATA_DIR/uos_uuid" ]; then
 fi
 
 # 2. Write the UOS identity files the bundled services expect.
+# /usr/lib/version is the firmware version string read by `uos runnable`.
+# /usr/lib/app_model is the console model key ubnt-tools passes to unifi-core
+# (APP_MODEL=$(cat /usr/lib/app_model)) for its boardSysIds lookup; when it's
+# missing the model resolves to "" and unifi-core crash-loops on boot with
+# `Unsupported console model: ""` (issue #18). UOSSERVER (sysid 0xae01) matches
+# the prefix in the version string above. /usr/lib/product_name is read
+# unconditionally by ubnt-tools (non-fatal, but noisy when absent).
 echo "Setting UOS_SERVER_VERSION=${UOS_SERVER_VERSION}"
 echo "UOSSERVER.0000000.${UOS_SERVER_VERSION}.0000000.000000.0000" > /usr/lib/version
 echo "UOSSERVER" > /usr/lib/app_model
