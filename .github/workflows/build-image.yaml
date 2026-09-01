@@ -14,6 +14,21 @@ on:
     types: [published]
   workflow_dispatch:
 
+# Serialize this publish workflow so its mutable tags (latest, main, and the
+# version tags) never race. Without a concurrency group, simultaneous runs
+# push the same tags in parallel and `latest` can settle on whichever job
+# finishes last rather than the newest commit. Grouping by workflow (not ref)
+# also serializes release events against main pushes, which write those same
+# shared tags. cancel-in-progress stays false so an in-progress build always
+# runs to completion and publishes its immutable `sha-<commit>` image rather
+# than being killed mid-publish. Caveat: GitHub keeps only the newest *pending*
+# run per group, so a burst of pushes within one build window can supersede an
+# intermediate commit's queued run before it starts — that commit then gets no
+# sha image. Acceptable here, since only completed/announced shas are pinned.
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository_owner }}/unifi-os-server
