@@ -14,6 +14,15 @@ on:
     types: [published]
   workflow_dispatch:
 
+# Serialize builds per ref so the mutable tags (latest, main, the version
+# tags) always land in commit order. Without this, concurrent pushes race
+# and `latest` can settle on whichever job finishes last rather than the
+# newest commit. cancel-in-progress stays false so every commit still
+# publishes its immutable `sha-<commit>` image for GitOps pinning.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository_owner }}/unifi-os-server
