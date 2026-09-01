@@ -14,13 +14,19 @@ on:
     types: [published]
   workflow_dispatch:
 
-# Serialize builds per ref so the mutable tags (latest, main, the version
-# tags) always land in commit order. Without this, concurrent pushes race
-# and `latest` can settle on whichever job finishes last rather than the
-# newest commit. cancel-in-progress stays false so every commit still
-# publishes its immutable `sha-<commit>` image for GitOps pinning.
+# Serialize this publish workflow so its mutable tags (latest, main, and the
+# version tags) never race. Without a concurrency group, simultaneous runs
+# push the same tags in parallel and `latest` can settle on whichever job
+# finishes last rather than the newest commit. Grouping by workflow (not ref)
+# also serializes release events against main pushes, which write those same
+# shared tags. cancel-in-progress stays false so an in-progress build always
+# runs to completion and publishes its immutable `sha-<commit>` image rather
+# than being killed mid-publish. Caveat: GitHub keeps only the newest *pending*
+# run per group, so a burst of pushes within one build window can supersede an
+# intermediate commit's queued run before it starts — that commit then gets no
+# sha image. Acceptable here, since only completed/announced shas are pinned.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}
   cancel-in-progress: false
 
 env:
