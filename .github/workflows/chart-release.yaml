@@ -2,6 +2,15 @@
 name: Release Helm chart
 
 # Packages the chart and publishes via chart-releaser to a `gh-pages` branch.
+#
+# Before packaging, the released chart is pinned to the immutable content
+# digest of the app image it was cut with (image.digest), so every published
+# chart version maps 1:1 to exactly one image build. This is what guarantees a
+# `helm upgrade` always rolls the pod and re-pulls the right image even under
+# the default pullPolicy: IfNotPresent — the image ref changes whenever the
+# content changes, so a stale cached tag can never shadow a fixed build. The
+# in-repo values.yaml keeps image.digest empty (floating tag) for local/dev;
+# the digest is only stamped into the packaged artifact here.
 
 on:
   push:
@@ -10,14 +19,21 @@ on:
       - 'chart/Chart.yaml'
   workflow_dispatch:
 
+# Serialize releases so a manual dispatch can't race a push and publish a
+# half-stamped chart. skip_existing then makes whichever wins idempotent.
+concurrency:
+  group: chart-release
+  cancel-in-progress: false
+
 permissions:
   contents: write
+  packages: read
   pages: write
 
 jobs:
   release:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 40
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -28,6 +44,97 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Login to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image digest to pin
+        id: digest
+        env:
+          REGISTRY: ghcr.io
+          IMAGE: ${{ github.repository_owner }}/unifi-os-server
+          BEFORE: ${{ github.event.before }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          REPO="${REGISTRY}/${IMAGE}"
+          APPVER=$(awk -F'"' '/^appVersion:/ {print $2}' chart/Chart.yaml)
+          SHORT_SHA="${SHA:0:7}"
+          SHA_REF="${REPO}:sha-${SHORT_SHA}"
+
+          resolve() {
+            docker buildx imagetools inspect "$1" \
+              --format '{{ .Manifest.Digest }}' 2>/dev/null
+          }
+
+          # Is build-image.yaml (re)building the app image for THIS commit? It
+          # runs on the same push whenever docker/ or its own workflow changes.
+          # On a push we can tell from the diff; on workflow_dispatch (no BEFORE)
+          # or a force-push that rewrote BEFORE we can't, so we treat it as
+          # changed and require the exact per-commit image rather than trusting
+          # a mutable tag that might still be mid-rebuild.
+          IMAGE_CHANGED=1
+          if [ "${BEFORE}" = "0000000000000000000000000000000000000000" ]; then
+            # workflow_dispatch: no prior ref. The image (if any) is already
+            # built; don't hard-wait — probe the per-commit tag, else appVersion.
+            IMAGE_CHANGED=0
+          elif [ -n "${BEFORE}" ]; then
+            if CHANGED="$(git diff --name-only "${BEFORE}" "${SHA}" \
+                 -- docker/ .github/workflows/build-image.yaml 2>/dev/null)"; then
+              [ -n "${CHANGED}" ] || IMAGE_CHANGED=0
+            fi
+            # git diff failed (BEFORE unreachable): leave IMAGE_CHANGED=1.
+          fi
+
+          REF=""
+          if [ "${IMAGE_CHANGED}" = "1" ]; then
+            # The image is being rebuilt for this commit. Wait for its immutable
+            # per-commit tag and pin exactly that. Never fall back to the mutable
+            # appVersion tag here: a network-app bump changes the image without
+            # bumping appVersion, so that tag can still resolve to the previous
+            # build — pinning it would recreate the stale-image trap this fixes.
+            echo "Image sources changed; waiting for ${SHA_REF}"
+            DEADLINE=$(( $(date +%s) + 1800 ))   # ~30 min; build-image caps at 30
+            until resolve "${SHA_REF}" >/dev/null; do
+              if [ "$(date +%s)" -ge "${DEADLINE}" ]; then
+                echo "Timed out waiting for ${SHA_REF}; refusing to pin a mutable tag" >&2
+                exit 1
+              fi
+              echo "  not published yet, retrying in 20s..."
+              sleep 20
+            done
+            REF="${SHA_REF}"
+          else
+            # Image unchanged for this release (chart-only push or manual
+            # dispatch). Prefer the exact per-commit image if it exists, else the
+            # current appVersion tag, which already points at stable content.
+            if resolve "${SHA_REF}" >/dev/null; then
+              REF="${SHA_REF}"
+            else
+              REF="${REPO}:${APPVER}"
+            fi
+          fi
+
+          echo "Resolving digest from ${REF}"
+          DIGEST="$(resolve "${REF}")"
+          if [ -z "${DIGEST}" ]; then
+            echo "Could not resolve a digest from ${REF}" >&2
+            exit 1
+          fi
+          echo "Pinning image digest ${DIGEST}"
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
+
+      - name: Stamp digest into chart values
+        env:
+          DIGEST: ${{ steps.digest.outputs.digest }}
+        run: |
+          set -euo pipefail
+          sed -i "s|^  digest: .*|  digest: \"${DIGEST}\"|" chart/values.yaml
+          grep -n '^  digest:' chart/values.yaml
 
       - name: Install Helm
         uses: azure/setup-helm@v4

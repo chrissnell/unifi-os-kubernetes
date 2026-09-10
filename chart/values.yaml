@@ -7,6 +7,14 @@ image:
   repository: ghcr.io/chrissnell/unifi-os-server
   # If unset, Chart.appVersion is used.
   tag: ""
+  # Immutable content digest (sha256:...). When set it takes precedence over
+  # `tag` and pins the exact image published alongside this chart release.
+  # Released charts ship with this stamped by CI (see chart-release.yaml), so
+  # every chart version maps 1:1 to one image build. This is what makes an
+  # upgrade always roll the pod even under pullPolicy: IfNotPresent — the ref
+  # changes whenever the image content changes, so a stale cached tag can never
+  # shadow a fixed build. Left empty in-repo for local/dev checkouts.
+  digest: ""
   pullPolicy: IfNotPresent
 
 imagePullSecrets: []
