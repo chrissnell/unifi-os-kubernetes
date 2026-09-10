@@ -296,6 +296,17 @@ helm template unifi chart/ > /tmp/render.yaml
 4. Opens a PR bumping `UOSSERVER_TAG` and `UOS_SERVER_VERSION`.
 5. Merging the PR triggers `build-image.yaml`, which publishes a new
    `unifi-os-server` tag.
+6. `chart-release.yaml` then pins the released chart to that image's
+   immutable content digest (`image.digest`) before publishing, so every
+   chart version maps 1:1 to one image build.
+
+Because released charts reference the image by digest, a `helm upgrade`
+always changes the pod's image ref and rolls it — even with the default
+`pullPolicy: IfNotPresent`. This closes the trap where two chart versions
+shared a mutable `appVersion` tag (e.g. `0.2.8` and `0.2.9` both pinned
+`5.1.37`) and a node's cached image was never replaced on upgrade. The
+in-repo `values.yaml` leaves `image.digest` empty so local/dev checkouts
+still float on the `appVersion` tag.
 
 ## Network app updates
 
