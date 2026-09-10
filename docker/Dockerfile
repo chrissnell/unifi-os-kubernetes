@@ -11,7 +11,7 @@
 # release-check workflow.
 
 ARG UOSSERVER_IMAGE=ghcr.io/chrissnell/uosserver
-ARG UOSSERVER_TAG=7562a085048e-multiarch
+ARG UOSSERVER_TAG=c9603dec9010-multiarch
 
 FROM ${UOSSERVER_IMAGE}:${UOSSERVER_TAG}
 
@@ -19,7 +19,7 @@ LABEL org.opencontainers.image.source="https://github.com/chrissnell/unifi-os-ku
 LABEL org.opencontainers.image.description="UniFi OS Server packaged for Docker and Kubernetes"
 LABEL org.opencontainers.image.licenses="MIT"
 
-ENV UOS_SERVER_VERSION="5.1.40"
+ENV UOS_SERVER_VERSION="5.1.42"
 
 # Network application version. Bumped automatically by the
 # network-app-release-check workflow whenever Ubiquiti's FUS publishes a
