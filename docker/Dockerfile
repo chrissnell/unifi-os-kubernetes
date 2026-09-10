@@ -63,6 +63,12 @@ RUN set -eux; \
 RUN set -eux; \
     printf '#!/bin/sh\nexit 101\n' > /usr/sbin/policy-rc.d; \
     chmod +x /usr/sbin/policy-rc.d; \
+    # Bullseye LTS ended 2026-08-31, so the bullseye-security Release file
+    # is no longer being re-signed and apt-get update aborts on the expired
+    # index. NETWORK_APP_VERSION is pinned, so accept the stale metadata
+    # for the duration of this bake step.
+    echo 'Acquire::Check-Valid-Until "false";' \
+      > /etc/apt/apt.conf.d/99-bullseye-eol; \
     for HOOK in /etc/dpkg/dpkg.cfg.d/015-ubnt-dpkg-status \
                 /etc/dpkg/dpkg.cfg.d/020-ubnt-dpkg-cache; do \
       cp "$HOOK" "$HOOK.original"; \
@@ -74,6 +80,7 @@ RUN set -eux; \
                 /etc/dpkg/dpkg.cfg.d/020-ubnt-dpkg-cache; do \
       mv "$HOOK.original" "$HOOK"; \
     done; \
+    rm /etc/apt/apt.conf.d/99-bullseye-eol; \
     rm /usr/sbin/policy-rc.d; \
     rm -rf /var/lib/apt/lists/*
 
