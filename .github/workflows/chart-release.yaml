@@ -33,7 +33,7 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -64,47 +64,59 @@ jobs:
           REPO="${REGISTRY}/${IMAGE}"
           APPVER=$(awk -F'"' '/^appVersion:/ {print $2}' chart/Chart.yaml)
           SHORT_SHA="${SHA:0:7}"
-
-          # Did this push touch the image sources? If so, build-image.yaml is
-          # (re)building the app image for this commit, and we must pin THAT
-          # build — addressed by its immutable sha-<commit> tag once it lands.
-          # Otherwise the image is unchanged and the current appVersion tag
-          # already resolves to the right content. Default to "changed" when we
-          # can't tell, so we never pin a tag that's still mid-rebuild.
-          IMAGE_CHANGED=1
-          if [ -n "${BEFORE}" ] \
-             && [ "${BEFORE}" != "0000000000000000000000000000000000000000" ]; then
-            if git diff --name-only "${BEFORE}" "${SHA}" \
-                 -- docker/ .github/workflows/build-image.yaml | grep -q .; then
-              IMAGE_CHANGED=1
-            else
-              IMAGE_CHANGED=0
-            fi
-          fi
+          SHA_REF="${REPO}:sha-${SHORT_SHA}"
 
           resolve() {
             docker buildx imagetools inspect "$1" \
               --format '{{ .Manifest.Digest }}' 2>/dev/null
           }
 
+          # Is build-image.yaml (re)building the app image for THIS commit? It
+          # runs on the same push whenever docker/ or its own workflow changes.
+          # On a push we can tell from the diff; on workflow_dispatch (no BEFORE)
+          # or a force-push that rewrote BEFORE we can't, so we treat it as
+          # changed and require the exact per-commit image rather than trusting
+          # a mutable tag that might still be mid-rebuild.
+          IMAGE_CHANGED=1
+          if [ "${BEFORE}" = "0000000000000000000000000000000000000000" ]; then
+            # workflow_dispatch: no prior ref. The image (if any) is already
+            # built; don't hard-wait — probe the per-commit tag, else appVersion.
+            IMAGE_CHANGED=0
+          elif [ -n "${BEFORE}" ]; then
+            if CHANGED="$(git diff --name-only "${BEFORE}" "${SHA}" \
+                 -- docker/ .github/workflows/build-image.yaml 2>/dev/null)"; then
+              [ -n "${CHANGED}" ] || IMAGE_CHANGED=0
+            fi
+            # git diff failed (BEFORE unreachable): leave IMAGE_CHANGED=1.
+          fi
+
           REF=""
           if [ "${IMAGE_CHANGED}" = "1" ]; then
-            echo "Image sources changed; waiting for ${REPO}:sha-${SHORT_SHA}"
-            DEADLINE=$(( $(date +%s) + 1500 ))   # up to 25 min for multi-arch
-            while [ "$(date +%s)" -lt "${DEADLINE}" ]; do
-              if resolve "${REPO}:sha-${SHORT_SHA}" >/dev/null; then
-                REF="${REPO}:sha-${SHORT_SHA}"
-                break
+            # The image is being rebuilt for this commit. Wait for its immutable
+            # per-commit tag and pin exactly that. Never fall back to the mutable
+            # appVersion tag here: a network-app bump changes the image without
+            # bumping appVersion, so that tag can still resolve to the previous
+            # build — pinning it would recreate the stale-image trap this fixes.
+            echo "Image sources changed; waiting for ${SHA_REF}"
+            DEADLINE=$(( $(date +%s) + 1800 ))   # ~30 min; build-image caps at 30
+            until resolve "${SHA_REF}" >/dev/null; do
+              if [ "$(date +%s)" -ge "${DEADLINE}" ]; then
+                echo "Timed out waiting for ${SHA_REF}; refusing to pin a mutable tag" >&2
+                exit 1
               fi
               echo "  not published yet, retrying in 20s..."
               sleep 20
             done
-            if [ -z "${REF}" ]; then
-              echo "::warning::sha-${SHORT_SHA} never appeared; falling back to :${APPVER}"
+            REF="${SHA_REF}"
+          else
+            # Image unchanged for this release (chart-only push or manual
+            # dispatch). Prefer the exact per-commit image if it exists, else the
+            # current appVersion tag, which already points at stable content.
+            if resolve "${SHA_REF}" >/dev/null; then
+              REF="${SHA_REF}"
+            else
+              REF="${REPO}:${APPVER}"
             fi
-          fi
-          if [ -z "${REF}" ]; then
-            REF="${REPO}:${APPVER}"
           fi
 
           echo "Resolving digest from ${REF}"
