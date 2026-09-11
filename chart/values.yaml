@@ -95,7 +95,7 @@ persistence:
     #  path: /volume1/NFS/unifi-os/mongo
 
   # Optional dedicated PVC for the Network app's autobackup directory
-  # (/var/lib/unifi/data/backup). When enabled, this overlays the main data
+  # (/var/lib/unifi/backup). When enabled, this overlays the main data
   # PVC so autobackups land on storage you can snapshot / replicate / scrub
   # independently. Leave disabled to keep autobackups inside the data PVC.
   backups:
