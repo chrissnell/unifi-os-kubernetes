@@ -119,7 +119,7 @@ spec:
             {{- end }}
             {{- if .Values.persistence.backups.enabled }}
             - name: backups
-              mountPath: /var/lib/unifi/data/backup
+              mountPath: /var/lib/unifi/backup
             {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
