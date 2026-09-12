@@ -3,6 +3,8 @@
 {{- $labels := include "unifi-os-server.labels" . -}}
 {{- $svc := .Values.service -}}
 {{- range $name, $p := .Values.ports }}
+{{- $mergedLabels := merge (default (dict) $p.labels) (default (dict) $svc.labels) }}
+{{- $mergedAnnotations := merge (default (dict) $p.annotations) (default (dict) $svc.annotations) }}
 {{- if $p.enabled }}
 ---
 apiVersion: v1
@@ -11,11 +13,13 @@ metadata:
   name: {{ printf "%s-%s" $fullName ($name | kebabcase) | trunc 63 | trimSuffix "-" }}
   labels:
     {{- $labels | nindent 4 }}
+    {{- if $mergedLabels }}
+    {{- toYaml $mergedLabels | nindent 4 }}
+    {{- end }}
     unifi-os-server.io/port: {{ $name | quote }}
-  {{- $merged := merge (default (dict) $p.annotations) (default (dict) $svc.annotations) }}
-  {{- if $merged }}
+  {{- if $mergedAnnotations }}
   annotations:
-    {{- toYaml $merged | nindent 4 }}
+    {{- toYaml $mergedAnnotations | nindent 4 }}
   {{- end }}
 spec:
   type: {{ $svc.type }}
