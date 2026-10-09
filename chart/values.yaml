@@ -132,13 +132,17 @@ service:
   # When type is LoadBalancer, this IP is requested. Empty = let the cluster
   # decide.
   loadBalancerIP: ""
-  # Labels applied to all created services. Useful for infra that selects
-  # services by label rather than annotation -- Cilium's LoadBalancerIPPool
+  # Labels applied to every per-port service below (not the optional exporter
+  # service, which carries its own). Useful for infra that selects services by
+  # label rather than annotation -- Cilium's LoadBalancerIPPool
   # `serviceSelector`, for example, is a label selector and cannot read
   # annotations. Values must be strings, so quote anything number-like
-  # (`rev: "1"`) or pass it with `--set-string`.
+  # (`rev: "1"`) or pass it with `--set-string`. The chart's own
+  # `app.kubernetes.io/*`, `helm.sh/chart` and `unifi-os-server.io/port`
+  # labels take precedence and cannot be reassigned here -- they carry the
+  # identity the service selector is built from.
   labels: {}
-  # Annotations applied to all created services.
+  # Annotations applied to every per-port service below.
   annotations: {}
   # External traffic policy for LoadBalancer/NodePort services.
   # "Cluster" works in all cases. "Local" preserves source IP but with

@@ -7,6 +7,12 @@ service:
   type: LoadBalancer
   loadBalancerIP: 192.0.2.10
   externalTrafficPolicy: Local
+  # Label every service so an IP-pool controller can select them. Cilium's
+  # LoadBalancerIPPool `serviceSelector` is a label selector and cannot read
+  # annotations, so this is the only hook that works there. Drop this block if
+  # your LB controller assigns from a default pool.
+  labels:
+    io.cilium/lb-ipam-pool: unifi
 
 ports:
   webui:        { enabled: true,  port: 443,   targetPort: 443,   protocol: TCP }

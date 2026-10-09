@@ -6,11 +6,14 @@
 {{- if $p.enabled }}
 {{- /*
   Build each metadata map once, highest precedence first, so a user-supplied
-  key overrides rather than emitting a duplicate YAML key. The port label is
-  chart-owned and always wins; `merge` writes into its first argument, so that
-  argument is a fresh dict and never a live .Values map.
+  key overrides rather than emitting a duplicate YAML key. Chart-owned labels
+  outrank user labels: the port label and the common labels both carry the
+  identity that spec.selector below is built from, so letting a user reassign
+  them would silently desync metadata.labels from the selector. `merge` writes
+  into its first argument, so that argument is a fresh dict, never a live
+  .Values map.
 */}}
-{{- $mergedLabels := merge (dict "unifi-os-server.io/port" $name) (default (dict) $p.labels) (default (dict) $svc.labels) (fromYaml $labels) }}
+{{- $mergedLabels := merge (dict "unifi-os-server.io/port" $name) (fromYaml $labels) (default (dict) $p.labels) (default (dict) $svc.labels) }}
 {{- $mergedAnnotations := merge (dict) (default (dict) $p.annotations) (default (dict) $svc.annotations) }}
 ---
 apiVersion: v1
