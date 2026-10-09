@@ -43,3 +43,45 @@ jobs:
             --set ports.siteSupervisor.enabled=true \
             --set ports.aqmps.enabled=true \
             > /tmp/render-full.yaml
+
+      - name: Render with service labels + annotations
+        # Pins the metadata merge: a per-port key overrides the global one, the
+        # chart-owned port label survives a user attempt to set it, and no key
+        # is ever emitted twice inside one metadata block.
+        run: |
+          set -euo pipefail
+          helm template unifi chart/ --show-only templates/services.yaml \
+            --set-string 'service.labels.pool=home' \
+            --set-string 'service.labels.unifi-os-server\.io/port=hijacked' \
+            --set-string 'service.annotations.owner=infra' \
+            --set-string 'ports.webui.labels.pool=dmz' \
+            --set-string 'ports.webui.annotations.owner=webui' \
+            > /tmp/render-labels.yaml
+
+          # Flatten to "<service> <block> <key> <value>" tuples.
+          awk '
+            /^  name: /       { svc = $2; next }
+            /^  labels:$/     { block = "labels";      next }
+            /^  annotations:$/{ block = "annotations"; next }
+            /^  [^ ]/         { block = "";            next }
+            block && /^    /  { print svc, block, $1, $2 }
+          ' /tmp/render-labels.yaml | tr -d '"' > /tmp/meta.txt
+
+          expect() {
+            grep -qxF "$1" /tmp/meta.txt || {
+              echo "missing expected metadata: $1" >&2; cat /tmp/meta.txt >&2; exit 1
+            }
+          }
+          expect 'unifi-unifi-os-server-webui labels pool: dmz'
+          expect 'unifi-unifi-os-server-stun labels pool: home'
+          expect 'unifi-unifi-os-server-webui labels unifi-os-server.io/port: webui'
+          expect 'unifi-unifi-os-server-webui annotations owner: webui'
+          expect 'unifi-unifi-os-server-stun annotations owner: infra'
+
+          dupes=$(awk '{print $1, $2, $3}' /tmp/meta.txt | sort | uniq -d)
+          if [ -n "${dupes}" ]; then
+            echo "duplicate keys emitted in a single metadata block:" >&2
+            echo "${dupes}" >&2
+            exit 1
+          fi
+          echo "service metadata merge OK"
