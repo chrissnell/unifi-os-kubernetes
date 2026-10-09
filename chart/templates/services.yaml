@@ -4,18 +4,27 @@
 {{- $svc := .Values.service -}}
 {{- range $name, $p := .Values.ports }}
 {{- if $p.enabled }}
+{{- /*
+  Build each metadata map once, highest precedence first, so a user-supplied
+  key overrides rather than emitting a duplicate YAML key. Chart-owned labels
+  outrank user labels: the port label and the common labels both carry the
+  identity that spec.selector below is built from, so letting a user reassign
+  them would silently desync metadata.labels from the selector. `merge` writes
+  into its first argument, so that argument is a fresh dict, never a live
+  .Values map.
+*/}}
+{{- $mergedLabels := merge (dict "unifi-os-server.io/port" $name) (fromYaml $labels) (default (dict) $p.labels) (default (dict) $svc.labels) }}
+{{- $mergedAnnotations := merge (dict) (default (dict) $p.annotations) (default (dict) $svc.annotations) }}
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: {{ printf "%s-%s" $fullName ($name | kebabcase) | trunc 63 | trimSuffix "-" }}
   labels:
-    {{- $labels | nindent 4 }}
-    unifi-os-server.io/port: {{ $name | quote }}
-  {{- $merged := merge (default (dict) $p.annotations) (default (dict) $svc.annotations) }}
-  {{- if $merged }}
+    {{- toYaml $mergedLabels | nindent 4 }}
+  {{- if $mergedAnnotations }}
   annotations:
-    {{- toYaml $merged | nindent 4 }}
+    {{- toYaml $mergedAnnotations | nindent 4 }}
   {{- end }}
 spec:
   type: {{ $svc.type }}
