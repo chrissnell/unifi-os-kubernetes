@@ -157,11 +157,13 @@ ports:
   # per-service metadata, merged on top of `service.annotations` and
   # `service.labels` above -- a per-port key wins over the global one. Useful
   # for example to set external-mdns hostnames on just the webui service.
-  webui:            { enabled: true,  port: 443,   targetPort: 443,   protocol: TCP, description: "Web UI / API" }
+  # `appProtocol` sets the Service port's appProtocol. On webui and networkApp,
+  # it makes gateways (e.g. Envoy Gateway) use HTTP/1.1 so websockets work.
+  webui:            { enabled: true,  port: 443,   targetPort: 443,   protocol: TCP, appProtocol: kubernetes.io/wss, description: "Web UI / API" }
   communication:    { enabled: true,  port: 8080,  targetPort: 8080,  protocol: TCP, description: "Device communication / inform" }
   stun:             { enabled: true,  port: 3478,  targetPort: 3478,  protocol: UDP, description: "STUN" }
   discovery:        { enabled: true,  port: 10003, targetPort: 10003, protocol: UDP, description: "L2 device discovery" }
-  networkApp:       { enabled: false, port: 8443,  targetPort: 8443,  protocol: TCP, description: "Legacy Network app port" }
+  networkApp:       { enabled: false, port: 8443,  targetPort: 8443,  protocol: TCP, appProtocol: kubernetes.io/wss, description: "Legacy Network app port" }
   hotspotSecured:   { enabled: false, port: 8444,  targetPort: 8444,  protocol: TCP, description: "Hotspot HTTPS portal" }
   hotspotRedirect0: { enabled: false, port: 8880,  targetPort: 8880,  protocol: TCP, description: "Hotspot HTTP redirect" }
   hotspotRedirect1: { enabled: false, port: 8881,  targetPort: 8881,  protocol: TCP, description: "Hotspot HTTP redirect" }

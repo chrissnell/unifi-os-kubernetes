@@ -42,5 +42,8 @@ spec:
       port: {{ $p.port }}
       targetPort: {{ $p.targetPort }}
       protocol: {{ $p.protocol }}
+      {{- with $p.appProtocol }}
+      appProtocol: {{ . | quote }}
+      {{- end }}
 {{- end }}
 {{- end }}
